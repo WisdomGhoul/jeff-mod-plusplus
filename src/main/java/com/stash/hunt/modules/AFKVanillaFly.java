@@ -20,7 +20,7 @@ public class AFKVanillaFly extends Module {
     private float targetPitch = 0;
 
     public AFKVanillaFly() {
-        super(Addon.CATEGORY, "AFKVanillaFly", "Maintains a level Y-flight with fireworks and smooth pitch control.");
+        super(Addon.CATEGORY, "AFKVanillaFly", "Maintains a level Y-flight with fireworks and smooth pitch control. Shitty update by 32766");
     }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -43,7 +43,7 @@ public class AFKVanillaFly extends Module {
             boolean isFlyingWithElytra = poseName.equalsIgnoreCase("fall_flying");
 
             if (!isFlyingWithElytra) {
-                info("You must be flying before enabling AFKVanillaFly. Shitty update by 32766");
+                info("You must be flying before enabling AFKVanillaFly.");
                 toggle(); // désactive le module si pas en vol
             }
         }
