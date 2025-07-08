@@ -3,15 +3,25 @@ package com.stash.hunt.modules;
 import com.stash.hunt.Addon;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.systems.modules.combat.KillAura;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.text.Text;
 
 public class NoKillAuraFly extends Module {
     private boolean wasKillAuraActive = false;
     private boolean killAuraToggledByUs = false;
+
+    private final SettingGroup sgGeneral = settings.getDefaultGroup();
+
+    // ✅ Nouveau réglage
+    private final Setting<Boolean> showMessages = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-messages")
+        .description("Show chat messages when KillAura is toggled.")
+        .defaultValue(true)
+        .build()
+    );
 
     public NoKillAuraFly() {
         super(
@@ -36,14 +46,15 @@ public class NoKillAuraFly extends Module {
                 wasKillAuraActive = true;
                 killAura.toggle();
                 killAuraToggledByUs = true;
-                info("§cKillAura disabled during flight");
-//                MeteorClient.LOG.info("[NoKillAuraFly] KillAura désactivé automatiquement.");
+
+                if (showMessages.get()) info("§cKillAura disabled during flight");
             }
         } else {
             if (killAuraToggledByUs && wasKillAuraActive && !killAura.isActive()) {
                 killAura.toggle();
-                info("§3KillAura enabled");
-//                MeteorClient.LOG.info("[NoKillAuraFly] KillAura réactivé automatiquement.");
+
+                if (showMessages.get()) info("§3KillAura enabled");
+
                 killAuraToggledByUs = false;
                 wasKillAuraActive = false;
             }
@@ -51,7 +62,8 @@ public class NoKillAuraFly extends Module {
             if (!killAura.isActive() && killAuraToggledByUs) {
                 killAuraToggledByUs = false;
                 wasKillAuraActive = false;
-                info("§eKillAura manually disabled, module inactive");
+
+                if (showMessages.get()) info("§eKillAura manually disabled, module inactive");
             }
         }
     }
