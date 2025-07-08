@@ -1,0 +1,5 @@
+v1	named	intermediary
+FIELD	com/stash/hunt/mixin/EntityMixin	Ljava/util/UUID;	uuid	field_6021
+FIELD	com/stash/hunt/mixin/KeyBindingMixin	Ljava/lang/String;	translationKey	field_1660
+FIELD	com/stash/hunt/mixin/LivingEntityMixin	I	jumpingCooldown	field_6228
+METHOD	com/stash/hunt/mixin/LivingEntityMixin	()Lnet/minecraft/entity/ai/brain/Brain;	getBrain	method_18868
