@@ -8,6 +8,8 @@
 
 ## Features
 - (almost) every modules from jeff mod are included, updated
+- ChatSigns
+  - Write up signs reachable in your render distance in chat
 - ElytraReplace
   - Swap an almost broken ELytra with a new one automatically
   - Useful if your wings has cursed enchantments
@@ -16,4 +18,7 @@
   - Disable KillAura during Elytra flights
   - Enable it automatically when on ground
   - Useful during nether baritone travel, to avoid ghasts and piglin triggers
+- StashMover
+  - Tools to move stashes items to another location (untested)
+  - Updated and compiled from https://github.com/miles352/meteor-stash-mover
 
