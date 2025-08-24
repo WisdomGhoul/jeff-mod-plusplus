@@ -53,6 +53,7 @@ public class Addon extends MeteorAddon {
         Modules.get().add(new ChatSigns());
         Modules.get().add(new StashMover2());
         Modules.get().add(new StashMoverListener());
+        Modules.get().add(new AutoPortal());
 
         boolean baritoneLoaded = checkModLoaded("baritone", "baritone-meteor");
         boolean xaeroWorldMapLoaded = checkModLoaded("xaeroworldmap");
