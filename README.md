@@ -13,10 +13,12 @@
     - Untested yet, may be unstable
 - ChatSigns
     - Display signs reachable in your render-distance in chat
+    - TO:DO Click on the desired signs to enable a tracer
 - ElytraReplace
-    - Swap an almost broken ELytra with a new one automatically
-    - Useful if your wings has cursed enchantments
-    - Configurable durability treshold
+    - Swap an almost broken Elytra with a new one automatically
+    - Useful if your wings have cursed enchantments
+    - Configurable durability treshold (default: 5)
+    - (not compatible with Armor Storage from Inventory Tweaks)
 - NoKillAuraFly
     - Disable KillAura during Elytra flights
     - Enable it automatically when on ground
