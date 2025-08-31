@@ -2,7 +2,7 @@
 
 ###
 
-<p align="left">Here you'll be able to find jeff mod updated to latest version, with some modifications to the module.<br>Won't answer any issue or message, if you feel to change something, just fork it and do your things</p>
+<p align="left">Here you'll be able to find jeff mod updated to 1.21.5, with some modifications to the module.<br>Everything is tested on 9b9t.<br>Won't answer any issue or message, if you feel to change something, just fork it and do your things</p>
 
 ###
 
