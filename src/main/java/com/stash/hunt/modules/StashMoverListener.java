@@ -43,7 +43,7 @@ public class StashMoverListener extends Module {
         .defaultValue("tpbacknow")
         .build()
     );
-    
+
     private final Setting<String> stashReturnTrigger = sgTrigger.add(new StringSetting.Builder()
         .name("Stash Return Trigger")
         .description("The message that will trigger teleportation back to stash")
@@ -118,51 +118,80 @@ public class StashMoverListener extends Module {
 
     // Flag to track if we should log trapdoor activation in the onTick method
     private boolean shouldLogActivation = false;
-    
+
     @EventHandler
     private void onReceiveMessage(ReceiveMessageEvent event) {
-        // DO NOT use any logging methods (debug/info) inside this method to avoid infinite recursion!
-        
-        String message = event.getMessage().getString();
-        
-        // Shortcut check for direct triggers to avoid parsing overhead
-        String lowerMsg = message.toLowerCase();
-        String lowerBaseTrigger = baseReturnTrigger.get().toLowerCase();
-        String lowerStashTrigger = stashReturnTrigger.get().toLowerCase();
-        
-        // Quick check for whispers containing our triggers
-        if ((lowerMsg.contains("whisper") || lowerMsg.contains("tell") || 
-             lowerMsg.contains("msg") || lowerMsg.contains("message")) &&
-            (lowerMsg.contains(lowerBaseTrigger) || lowerMsg.contains(lowerStashTrigger))) {
-            
-            // Instead of logging here, set a flag to log in the tick handler
-            shouldActivateTrapdoor = true;
-            shouldLogActivation = true;
-            activationTicks = activationDelay.get();
-            return;
-        }
-        
-        // More careful parsing if the quick check didn't catch it
-        Matcher matcher = PRIVATE_MESSAGE_PATTERN.matcher(message);
-        if (matcher.matches()) {
-            String sender = matcher.group(1);
-            String content = matcher.group(2);
-            
-            // If allowedSenders is empty, accept all senders
-            boolean senderAllowed = allowedSenders.get().isEmpty() || allowedSenders.get().contains(sender);
-            
-            // Check if sender is allowed
-            if (senderAllowed) {
-                // Check if content matches triggers
-                if (matches(content, baseReturnTrigger.get()) || matches(content, stashReturnTrigger.get())) {
-                    shouldActivateTrapdoor = true;
-                    shouldLogActivation = true;
-                    activationTicks = activationDelay.get();
+        if (mc == null || mc.player == null) return;
+
+        final String raw = event.getMessage().getString();
+        final boolean ic = ignoreCase.get();
+
+        // 1) Détecter la présence du trigger n'importe où dans le message
+        String base = baseReturnTrigger.get();
+        String stash = stashReturnTrigger.get();
+        String hay = ic ? raw.toLowerCase() : raw;
+        String needleBase = ic ? base.toLowerCase() : base;
+        String needleStash = ic ? stash.toLowerCase() : stash;
+
+        boolean hasTrigger = hay.contains(needleBase) || hay.contains(needleStash);
+        if (!hasTrigger) return;
+
+        // 2) Déterminer (au mieux) l'expéditeur
+        String sender = extractSender(raw);
+
+        // 3) Vérifier Allowed Senders si renseigné
+        List<String> allowed = allowedSenders.get();
+        if (!allowed.isEmpty()) {
+            boolean ok = false;
+
+            // a) match direct sur l'expéditeur extrait
+            if (sender != null && !sender.isEmpty()) {
+                for (String s : allowed) {
+                    ok |= ic ? s.equalsIgnoreCase(sender) : s.equals(sender);
+                    if (ok) break;
                 }
             }
+
+            // b) fallback: si pas d'expéditeur fiable, accepter si le message contient un des pseudos
+            if (!ok) {
+                for (String s : allowed) {
+                    ok |= ic ? hay.contains(s.toLowerCase()) : raw.contains(s);
+                    if (ok) break;
+                }
+            }
+
+            if (!ok) return; // bloqué par la whitelist
         }
+
+        // 4) Armer l’activation; le log partira dans onTick
+        shouldActivateTrapdoor = true;
+        shouldLogActivation = true;
+        activationTicks = activationDelay.get();
     }
-    
+
+    // Essaie plusieurs formats fréquents de MP (EN/FR + variantes plugins)
+    private String extractSender(String raw) {
+        // Exemples gérés :
+        // "From Name: msg" | "[From Name] msg" | "Name -> you: msg" | "you -> Name: msg"
+        // "De Name : msg" | "[De Name] msg" | "[MSG] Name: msg" | "[Privé] Name: msg"
+        String[] patterns = new String[] {
+            "^(?:\\[.*?\\]\\s*)?From\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
+            "^(?:\\[.*?\\]\\s*)?To\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
+            "^([A-Za-z0-9_]+)\\s*->\\s*(?:me|you)\\s*:\\s+.+$",
+            "^(?:me|you)\\s*->\\s*([A-Za-z0-9_]+)\\s*:\\s+.+$",
+            "^(?:\\[.*?\\]\\s*)?De\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",   // FR: "De Pseudo : ..."
+            "^(?:\\[.*?\\]\\s*)?\\[?MSG\\]?\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
+            "^(?:\\[.*?\\]\\s*)?\\[?Priv[ée]??\\]?\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
+            "^(?:\\[.*?\\]\\s*)?([A-Za-z0-9_]+)\\s+(?:whispers|tells you|messages(?: you)?)\\s*:\\s+.+$"
+        };
+        for (String p : patterns) {
+            Matcher m = Pattern.compile(p, Pattern.CASE_INSENSITIVE).matcher(raw);
+            if (m.matches()) return m.group(1);
+        }
+        return null; // pas sûr
+    }
+
+
     /**
      * Check if a message contains a trigger word
      */
@@ -181,7 +210,7 @@ public class StashMoverListener extends Module {
             debug("Received trigger message - activating trapdoor");
             shouldLogActivation = false;
         }
-        
+
         if (shouldActivateTrapdoor && targetTrapdoor == null) {
             targetTrapdoor = findTrapdoor();
             if (targetTrapdoor == null) {
@@ -191,7 +220,7 @@ public class StashMoverListener extends Module {
             }
             debug("Found trapdoor at " + targetTrapdoor.toShortString());
         }
-        
+
         // Handle trapdoor activation
         if (shouldActivateTrapdoor && targetTrapdoor != null) {
             if (activationTicks <= 0) {
@@ -203,7 +232,7 @@ public class StashMoverListener extends Module {
                 activationTicks--;
             }
         }
-        
+
         // Handle trapdoor reset (to be ready for next activation)
         if (shouldResetTrapdoor && targetTrapdoor != null) {
             if (resetTicks <= 0) {
@@ -222,23 +251,23 @@ public class StashMoverListener extends Module {
      */
     private BlockPos findTrapdoor() {
         if (mc.player == null || mc.world == null) return null;
-        
+
         BlockPos playerPos = mc.player.getBlockPos();
         int range = searchRange.get();
-        
+
         for (int x = -range; x <= range; x++) {
             for (int y = -range; y <= range; y++) {
                 for (int z = -range; z <= range; z++) {
                     BlockPos pos = playerPos.add(x, y, z);
                     Block block = mc.world.getBlockState(pos).getBlock();
-                    
+
                     if (block == trapdoorType.get()) {
                         return pos;
                     }
                 }
             }
         }
-        
+
         return null;
     }
 
@@ -247,16 +276,16 @@ public class StashMoverListener extends Module {
      */
     private void activateTrapdoor(BlockPos pos) {
         if (mc.player == null || mc.world == null || mc.interactionManager == null) return;
-        
+
         Vec3d hitPos = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
         BlockHitResult hit = new BlockHitResult(hitPos, Direction.UP, pos, false);
-        
+
         // Look at the trapdoor and right-click it
         Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
             mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
             mc.player.swingHand(Hand.MAIN_HAND);
         });
-        
+
         debug("Activated trapdoor at " + pos.toShortString());
     }
 

@@ -188,8 +188,14 @@ public class StashMover2 extends Module {
         .build()
     );
 
+    private final Setting<BlockPos> depositChestPos = sgGeneral.add(new BlockPosSetting.Builder()
+        .name("deposit-chest")
+        .description("The position of the single deposit chest connected to hoppers.")
+        .defaultValue(new BlockPos(0, 0, 0))
+        .build()
+    );
+
     // Chest positions store either a single chest OR the left chest of a double chest
-    private HashSet<BlockPos> depositChests = new HashSet<>();
     private HashSet<BlockPos> lootChests = new HashSet<>();
 
     private State state = State.IDLE_LOOTING;
@@ -217,13 +223,18 @@ public class StashMover2 extends Module {
     /** The amount of inventory slots to keep empty. 1 is used so a pearl can be picked up easily */
     private final int EMPTY_INV_SLOTS = 1;
     private boolean hasOpenedPearlChest = false;
+
+    private int depositAttempts = 0;
+    private final int MAX_DEPOSIT_ATTEMPTS = 10; // To prevent infinite loops if hoppers aren't working
+    private int pearlChestOpenAttempts = 0; // To track failed attempts to open pearl container
+    private final int MAX_PEARL_CHEST_OPEN_ATTEMPTS = 5; // Max attempts before giving up
+
     public StashMover2() {
         super(Addon.CATEGORY, "StashMover2", "Automates moving items from stashes to your base");
     }
 
     @Override
     public void onActivate() {
-//        state = State.IDLE_LOOTING;
         state = currState.get();
         BaritoneAPI.getProvider().getPrimaryBaritone().getCommandManager().execute("allowBreak false");
         currentPathGoal = null;
@@ -238,6 +249,8 @@ public class StashMover2 extends Module {
         teleportDelay = 0;
         lootTimeout = 0;
         waitingForChestUpdate = false;
+        depositAttempts = 0;
+        pearlChestOpenAttempts = 0;
     }
 
     @Override
@@ -252,19 +265,9 @@ public class StashMover2 extends Module {
         // Buttons
         WTable buttonTable = list.add(theme.table()).widget();
 
-        WButton addDepositChunkBtn = buttonTable.add(theme.button("Add deposit chunk")).widget();
-        addDepositChunkBtn.action = () -> {
-            depositChests.addAll(getContainersInChunk(mc.player.getChunkPos()));
-        };
-
         WButton addLootChunkBtn = buttonTable.add(theme.button("Add loot chunk")).widget();
         addLootChunkBtn.action = () -> {
             lootChests.addAll(getContainersInChunk(mc.player.getChunkPos()));
-        };
-
-        WButton clearDepositBtn = buttonTable.add(theme.button("Clear deposit chests")).widget();
-        clearDepositBtn.action = () -> {
-            depositChests.clear();
         };
 
         WButton clearLootBtn = buttonTable.add(theme.button("Clear loot chests")).widget();
@@ -347,6 +350,7 @@ public class StashMover2 extends Module {
         if (interactDelay > 0)
         {
             interactDelay--;
+            return;
         }
 
         if (quickMoveTimeout > 0)
@@ -519,13 +523,11 @@ public class StashMover2 extends Module {
             }
         }
 
-
         // fill up enderchest
         if (state == State.MOVING_TO_LOOT_ENDER_CHEST
             && !BaritoneAPI.getProvider().getPrimaryBaritone().getGetToBlockProcess().isActive()
             && mc.currentScreen instanceof GenericContainerScreen screen
-            && !waitingForChestUpdate
-            )
+            && !waitingForChestUpdate)
         {
             ScreenHandler handler = screen.getScreenHandler();
             int filledSlots = 0;
@@ -549,7 +551,6 @@ public class StashMover2 extends Module {
                 quickMoveSlots(handler, true);
                 usedEchest = true;
             }
-
         }
 
         // send pearl message
@@ -568,6 +569,13 @@ public class StashMover2 extends Module {
             beforePearlPos = mc.player.getBlockPos();
             mc.execute(() -> { mc.player.closeScreen(); mc.player.closeHandledScreen(); });
             return;
+        }
+
+        if (state == State.PATHING_TO_PORTAL
+            && !BaritoneAPI.getProvider().getPrimaryBaritone().getGetToBlockProcess().isActive())
+        {
+            state = State.PEARLING;
+            portalDelay = 100;
         }
 
         if (state == State.PATHING_TO_PORTAL
@@ -667,17 +675,16 @@ public class StashMover2 extends Module {
 
         if (state == State.IDLE_DEPOSITING && pearlDelay <= 0)
         {
-            BlockPos nearestChest = findNearestContainer(depositChests);
-            if (nearestChest == null)
+            if (depositChestPos.get().equals(new BlockPos(0, 0, 0)))
             {
-                info("All deposit chests have been filled, disabling");
+                info("No deposit chest configured, disabling");
                 this.toggle();
             }
             else
             {
-                debugMsg("Moving to deposit chest at " + nearestChest);
+                debugMsg("Moving to deposit chest at " + depositChestPos.get());
                 state = State.MOVING_TO_DEPOSIT;
-                currentPathGoal = nearestChest;
+                currentPathGoal = depositChestPos.get();
                 // POSSIBLE BUG: if baritone cannot find a path it may instantly disable
                 BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalNear(currentPathGoal, (int) Math.floor(chestInteractRange.get())));
             }
@@ -716,23 +723,24 @@ public class StashMover2 extends Module {
             else if (chestOpenDelay == 1)
             {
                 boolean moreToDeposit = Utils.emptyInvSlots(mc) < 36;
-                int emptySlotsInInventory = Utils.emptyInvSlots(mc);
-
 
                 if (moreToDeposit)
                 {
-                    debugMsg("Finished depositing to chest at " + currentPathGoal);
-                    depositChests.remove(currentPathGoal);
-                    state = State.IDLE_DEPOSITING;
+                    depositAttempts++;
+                    if (depositAttempts >= MAX_DEPOSIT_ATTEMPTS) {
+                        info("Deposit chest appears full (hoppers not clearing?), disabling");
+                        this.toggle();
+                        return;
+                    }
+                    debugMsg("More to deposit, retrying after delay");
+                    chestOpenDelay = 20; // Retry quick move after delay
                 }
                 else
                 {
                     // if the inventory is empty and the echest has already been depleted
                     if (usedEchest)
                     {
-                    ChatUtils.sendPlayerMsg("/kill");
-//                        info("Would be killing");
-//                        this.toggle();
+                        ChatUtils.sendPlayerMsg("/kill");
                         beforeRespawnPos = mc.player.getBlockPos();
                         usedEchest = false;
                     }
@@ -742,6 +750,7 @@ public class StashMover2 extends Module {
                         waitingForChestUpdate = true;
                         BaritoneAPI.getProvider().getPrimaryBaritone().getGetToBlockProcess().getToBlock(Blocks.ENDER_CHEST);
                     }
+                    depositAttempts = 0;
                 }
                 mc.execute(() -> { mc.player.closeScreen(); mc.player.closeHandledScreen(); });
                 return;
@@ -898,14 +907,12 @@ public class StashMover2 extends Module {
             // shift click hotbar 1 slot to make it empty
             mc.interactionManager.clickSlot(
                 mc.player.currentScreenHandler.syncId,
-                36,
+                36, // Slot 0 in hotbar
                 0,
                 SlotActionType.QUICK_MOVE,
                 mc.player
             );
         }
-//        mc.player.closeHandledScreen();
-//        mc.player.closeScreen();
     }
 
     /** Moves all slots within the specified inventory by quick moving them into the
@@ -921,24 +928,40 @@ public class StashMover2 extends Module {
         if (playerInventory) {
             // SHIFT-click items from player inventory -> container
             for (int i = handler.slots.size() - 36; i < handler.slots.size(); i++) {
+                // Skip hotbar slot 0 (index 36 in ScreenHandler) to keep it empty
+                if (i == 36) continue;
                 Slot slot = handler.getSlot(i);
                 if (slot.hasStack()) {
                     clickSlot(handler, slot.id);
                 }
             }
-        }
-        else {
-            // SHIFT-click items from container -> player inventory
+        } else {
+            // SHIFT-click items from container -> player inventory, avoiding hotbar slot 0
             for (int i = 0; i < handler.slots.size() - 36; i++) {
                 Slot slot = handler.getSlot(i);
                 if (slot.hasStack()) {
                     if (onlyMoveShulkers.get() && !(slot.getStack().getItem() instanceof BlockItem)) continue;
                     else if (onlyMoveShulkers.get() && !(((BlockItem)slot.getStack().getItem()).getBlock() instanceof ShulkerBoxBlock)) continue;
                     if (emptySlotsInInventory > EMPTY_INV_SLOTS) {
-                        clickSlot(handler, slot.id);
-                        emptySlotsInInventory--;
-                    }
-                    else {
+                        // Temporarily set slot 0 to a dummy item to prevent quick move from filling it
+                        Slot hotbarSlot0 = handler.getSlot(36);
+                        boolean wasEmpty = !hotbarSlot0.hasStack();
+                        if (wasEmpty) {
+                            // Simulate an item in slot 0 to block it
+                            clickSlot(handler, slot.id);
+                            // If slot 0 got filled, move the item to another empty slot
+                            if (hotbarSlot0.hasStack()) {
+                                int emptySlot = findEmptyPlayerSlot(handler);
+                                if (emptySlot != -1 && emptySlot != 36) {
+                                    clickSlot(handler, 36, 0, SlotActionType.PICKUP);
+                                    clickSlot(handler, emptySlot, 0, SlotActionType.PICKUP);
+                                }
+                            }
+                        } else {
+                            clickSlot(handler, slot.id);
+                        }
+                        emptySlotsInInventory = Utils.emptyInvSlots(mc);
+                    } else {
                         slotsLeft++;
                     }
                 }
@@ -948,32 +971,30 @@ public class StashMover2 extends Module {
     }
 
     /**
-     * Attempts to extract exactly one glowstone from the given slot in the open container.
-     * It does so by simulating a split-stack action:
+     * Attempts to extract exactly one ender pearl from the given slot in the open container
+     * and place it in the first hotbar slot (slot 0). It does so by simulating a split-stack action:
      *   1. Left-click the source slot to pick up the entire stack.
-     *   2. Right-click an empty slot in the player's inventory to deposit one item.
+     *   2. Right-click the first hotbar slot (slot 36 in the screen handler) to deposit one item.
      *   3. Left-click the source slot again to return the remainder.
-     * Then it closes the container.
      *
      * @param handler   The open container's ScreenHandler.
-     * @param slotIndex The index of the slot that contains the glowstone stack.
+     * @param slotIndex The index of the slot that contains the ender pearl stack.
      */
     private void moveOneItemFromSlotToHotbar1(ScreenHandler handler, int slotIndex) {
         // 1) Pick up the entire stack from the source slot.
         mc.interactionManager.clickSlot(handler.syncId, slotIndex, 0, SlotActionType.PICKUP, mc.player);
         // 2) Find an empty slot in the player's inventory (the last 36 slots).
-//        int emptySlot = findEmptyPlayerSlot(handler);
-//        if (emptySlot != -1) {
-            // 3) Right-click the empty slot to deposit exactly one item.
+        int emptySlot = findEmptyPlayerSlot(handler);
+        if (emptySlot != -1) {
+        // 3) Right-click the empty slot to deposit exactly one item.
             mc.interactionManager.clickSlot(handler.syncId, 54, 1, SlotActionType.PICKUP, mc.player);
-//            info("Deposited one item into slot " + emptySlot);
-//        } else {
-//            info("No empty slot found in player inventory for splitting stack.");
-//        }
+              info("Deposited one item into slot " + emptySlot);
+        } else {
+            info("No empty slot found in player inventory for splitting stack.");
+        }
         // 4) Left-click the source slot to return the remainder.
         mc.interactionManager.clickSlot(handler.syncId, slotIndex, 0, SlotActionType.PICKUP, mc.player);
     }
-
 
     private void clickSlot(ScreenHandler handler, int slotId) {
         mc.interactionManager.clickSlot(
@@ -991,7 +1012,6 @@ public class StashMover2 extends Module {
         BlockHitResult hitResult = new BlockHitResult(vec, Direction.UP, pos, false);
         float yaw = (float)Rotations.getYaw(pos);
         float pitch = (float)Rotations.getPitch(pos);
-//        if (!Objects.equals(getChestOrShulkerLookingAt(chestInteractRange.get()), pos)) {
         if (!isBlockInLineOfVision(pos, debugTemp.get())) {
             mc.player.setYaw(yaw);
             mc.player.setPitch(pitch);
@@ -1127,9 +1147,9 @@ public class StashMover2 extends Module {
         {
             FileReader reader = new FileReader(file);
             SaveData data = GSON.fromJson(reader, SaveData.class);
-            depositChests = data.depositChests;
             lootChests = data.lootChests;
-            info("Successfully loaded " + depositChests.size() + " deposit chests and " + lootChests.size() + " loot chests.");
+            depositChestPos.set(data.depositChestPos);
+            info("Successfully loaded deposit chest at " + depositChestPos.get() + " and " + lootChests.size() + " loot chests.");
             reader.close();
         }
         catch (IOException e)
@@ -1146,12 +1166,12 @@ public class StashMover2 extends Module {
             file.getParentFile().mkdirs();
             Writer writer = new FileWriter(file);
             SaveData data = new SaveData();
-            data.depositChests = depositChests;
+            data.depositChestPos = depositChestPos.get();
             data.lootChests = lootChests;
             GSON.toJson(data, writer);
             writer.flush();
             writer.close();
-            info("Sucessfully Saved " + depositChests.size() + " deposit chests and " + lootChests.size() + " loot chests.");
+            info("Sucessfully Saved deposit chest at " + depositChestPos.get() + " and " + lootChests.size() + " loot chests.");
         }
         catch (IOException e)
         {
@@ -1166,8 +1186,7 @@ public class StashMover2 extends Module {
 
     private class SaveData
     {
-        public HashSet<BlockPos> depositChests;
+        public BlockPos depositChestPos;
         public HashSet<BlockPos> lootChests;
     }
-
 }
