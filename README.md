@@ -2,7 +2,7 @@
 
 ###
 
-<p align="left">Here you'll be able to find jeff mod updated to latest version, with some modifications to the module.<br>Won't answer any issue or message, if you feel to change something, just fork it and do your things</p>
+<p align="left">Here you'll be able to find jeff mod updated to 1.21.5, with some modifications to the module.<br>Everything is tested on 9b9t.<br>Won't answer any issue or message, if you feel to change something, just fork it and do your things</p>
 
 ###
 
@@ -13,10 +13,12 @@
     - Untested yet, may be unstable
 - ChatSigns
     - Display signs reachable in your render-distance in chat
+    - TO:DO Click on the desired signs to enable a tracer
 - ElytraReplace
-    - Swap an almost broken ELytra with a new one automatically
-    - Useful if your wings has cursed enchantments
-    - Configurable durability treshold
+    - Swap an almost broken Elytra with a new one automatically
+    - Useful if your wings have cursed enchantments
+    - Configurable durability treshold (default: 5)
+    - (not compatible with Armor Storage from Inventory Tweaks)
 - NoKillAuraFly
     - Disable KillAura during Elytra flights
     - Enable it automatically when on ground
