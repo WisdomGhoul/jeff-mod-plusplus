@@ -28,3 +28,25 @@
     - Enable it automatically when on ground
     - Useful during nether baritone travel, to avoid ghasts and piglin triggers
 
+## Prerequisites
+
+- **JDK 17+**: [Adoptium](https://adoptium.net/) (JRE is ok if you don't build it urself)
+- **Git**: [Download](https://git-scm.com/downloads) (only to build it urself)
+- **Fabric Loader/API**: [FabricMC](https://fabricmc.net/use/installer/)
+
+## Build Instructions
+
+1. **Clone Repository**:
+   ```bash
+   git clone https://github.com/WisdomGhoul/jeff-mod-plusplus
+   cd jeff-mod-plusplus
+   ```
+
+2. **Build JAR**:
+   ```bash
+   ./gradlew build
+   ```
+   JAR in `build/libs/` (e.g., `jeff-mod-plusplus-addon-1.0.0.jar`).
+
+3. **Install**:
+   Copy JAR to `.minecraft/mods/`. Launch Minecraft with Fabric + Meteor 1.21.5.
