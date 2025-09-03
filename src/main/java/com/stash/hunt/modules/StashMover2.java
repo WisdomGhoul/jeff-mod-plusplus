@@ -22,6 +22,7 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
+import net.minecraft.screen.PlayerScreenHandler;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.block.*;
@@ -58,6 +59,16 @@ public class StashMover2 extends Module {
     protected static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+
+    // Méthode helper pour obtenir le slot ID de la hotbar 0, en fonction du handler
+    private int getPlayerHotbarSlot0(ScreenHandler handler) {
+        if (handler instanceof net.minecraft.screen.PlayerScreenHandler) {
+            return 0;  // Hotbar commence à 0 dans PlayerScreenHandler
+        } else {
+            // Pour les containers (coffre, shulker, etc.), hotbar commence aux 9 derniers slots
+            return handler.slots.size() - 9;
+        }
+    }
 
     private final Setting<BlockPos> pearlContainer = sgGeneral.add(new BlockPosSetting.Builder()
         .name("pearl-container")
@@ -190,7 +201,7 @@ public class StashMover2 extends Module {
 
     private final Setting<BlockPos> depositChestPos = sgGeneral.add(new BlockPosSetting.Builder()
         .name("deposit-chest")
-        .description("The position of the single deposit chest connected to hoppers.")
+        .description("Position to deposit chest. Need to be outrange from pearl chamber to make sure baritone move after pearling")
         .defaultValue(new BlockPos(0, 0, 0))
         .build()
     );
@@ -230,7 +241,7 @@ public class StashMover2 extends Module {
     private final int MAX_PEARL_CHEST_OPEN_ATTEMPTS = 5; // Max attempts before giving up
 
     public StashMover2() {
-        super(Addon.CATEGORY, "StashMover2", "Automates moving items from stashes to your base");
+        super(Addon.CATEGORY, "StashMover2", "Automates moving items from stashes to your base. 32766 fork. Alpha version.");
     }
 
     @Override
@@ -585,82 +596,105 @@ public class StashMover2 extends Module {
             portalDelay = 100;
         }
 
-        if (state == State.GETTING_PEARL)
-        {
-            if (mc.player.getInventory().getStack(0).getItem().equals(Items.ENDER_PEARL))
-            {
+        if (state == State.GETTING_PEARL) {
+            if (mc.player.getInventory().getStack(0).getItem().equals(Items.ENDER_PEARL)) {
                 state = State.THROWING_PEARL;
                 pearlPitchDelay = pearlPitchingDelay.get();
                 hasOpenedPearlChest = false;
-            }
-            else if (hasOpenedPearlChest && !waitingForChestUpdate)
-            {
+            } else if (hasOpenedPearlChest && !waitingForChestUpdate) {
                 ScreenHandler handler = mc.player.currentScreenHandler;
-                for (int i = 0; i < handler.slots.size() - 36; i++) {
+                for (int i = 0; i < handler.slots.size() - 36; i++) {  // Container slots
                     Slot slot = handler.getSlot(i);
                     if (slot.hasStack() && slot.getStack().getItem().equals(Items.ENDER_PEARL)) {
                         moveOneItemFromSlotToHotbar1(handler, i);
-
+                        // Vérification après move : Si pas de pearl en hotbar 0, log erreur
+                        if (!mc.player.getInventory().getStack(0).getItem().equals(Items.ENDER_PEARL)) {
+                            debugMsg("Failed to move pearl, retrying next tick");
+                            return;  // Retry au prochain tick si échec
+                        }
                         mc.execute(() -> { mc.player.closeScreen(); mc.player.closeHandledScreen(); });
                         return;
                     }
                 }
-            }
-            else if (!hasOpenedPearlChest)
-            {
-
-                if (interactWithBlock(pearlContainer.get()))
-                {
-                    hasOpenedPearlChest = true; // so we don't open it again
+            } else if (!hasOpenedPearlChest) {
+                if (interactWithBlock(pearlContainer.get())) {
+                    hasOpenedPearlChest = true;
                     waitingForChestUpdate = true;
-                }
-                else
-                {
+                } else {
                     debugMsg("Failed to open pearl chest");
                 }
             }
         }
 
-        if (state == State.THROWING_PEARL)
-        {
+        if (state == State.THROWING_PEARL) {
             debugMsg("pearl pitch delay: " + pearlPitchDelay);
             // TODO: Add setting for the trapdoor type
             BlockPos trapdoorPos = findBlock(Blocks.OAK_TRAPDOOR);
             // wait until the trapdoor is found
-            if (trapdoorPos == null)
-            {
+            if (trapdoorPos == null) {
                 debugMsg("No trapdoor found");
                 return;
             }
             BlockState trapdoor = mc.player.getWorld().getBlockState(trapdoorPos);
             // wait for the trapdoor to be open before pearling to avoid hitting it
-            if (!trapdoor.get(TrapdoorBlock.OPEN)) return;
-            // assume we are already in the pearl water and have a pearl in hotbar slot 1
+            if (!trapdoor.get(TrapdoorBlock.OPEN)) {
+                debugMsg("Trapdoor is not open");
+                return;
+            }
+
+            // Vérifier si le joueur est submergé (sous l'eau)
+            if (mc.player.isSubmergedInWater()) {
+                debugMsg("Player is submerged, attempting to float to surface");
+                // Forcer le joueur à regarder vers le haut pour faciliter la remontée
+                mc.player.setPitch(-45.0f); // Pitch négatif = regarder vers le haut
+                // Simuler une pression sur "avancer", "strafe gauche" et "sauter" pour remonter
+                setPressed(mc.options.forwardKey, true);
+                setPressed(mc.options.backKey, true);
+                setPressed(mc.options.leftKey, true);
+                setPressed(mc.options.rightKey, true);
+                setPressed(mc.options.jumpKey, true);
+                mc.execute(() -> {
+                    // Relâcher les touches après 10 ticks (200ms) pour éviter un déplacement excessif
+                    new java.util.Timer().schedule(new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+                            setPressed(mc.options.forwardKey, false);
+                            setPressed(mc.options.backKey, false);
+                            setPressed(mc.options.leftKey, false);
+                            setPressed(mc.options.jumpKey, false);
+                            debugMsg("Released movement keys after attempting to float");
+                        }
+                    }, 200); // 200ms ≈ 10 ticks
+                });
+                return; // Attendre le prochain tick pour vérifier si le joueur est à la surface
+            }
+
+            // Le joueur est à la surface, procéder au lancer
             mc.player.getInventory().setSelectedSlot(0);
             mc.player.setPitch((float)Rotations.getPitch(soulSandPos.get()));
-            debugMsg("aiming at pitch of " + Rotations.getPitch(soulSandPos.get()));
-            mc.player.setYaw((float) Rotations.getYaw(soulSandPos.get()));
+            debugMsg("Aiming at pitch of " + Rotations.getPitch(soulSandPos.get()));
+            mc.player.setYaw((float)Rotations.getYaw(soulSandPos.get()));
             mc.player.closeScreen(); mc.player.closeHandledScreen();
-            if (pearlPitchDelay > 0)
-            {
+
+            if (pearlPitchDelay > 0) {
                 pearlPitchDelay--;
-            }
-            else {
+            } else {
+                // Vérifier que le joueur n'a pas d'obstruction devant lui
                 HitResult hitResult = mc.getCameraEntity().raycast(1, 0, false);
-                if (hitResult == null || hitResult.getType().equals(HitResult.Type.BLOCK)) return;
+                if (hitResult == null || hitResult.getType().equals(HitResult.Type.BLOCK)) {
+                    debugMsg("Obstruction detected, waiting for clear line of sight");
+                    return;
+                }
                 mc.execute(() -> {
-                    if (Objects.equals(getBlockTargetted(100.0), soulSandPos.get()))
-                    {
+                    if (Objects.equals(getBlockTargetted(100.0), soulSandPos.get())) {
                         debugMsg("Throwing pearl");
                         mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
                         state = State.IDLE_DEPOSITING;
                         pearlDelay = afterPearlDelay.get();
                         mc.player.setSneaking(false);
                         setPressed(mc.options.forwardKey, false);
-                    }
-                    else
-                    {
-//                        info("target block is at " + getBlockTargetted(100.0));
+                    } else {
+                        debugMsg("Adjusting position to aim at soul sand");
                         mc.player.setSneaking(true);
                         setPressed(mc.options.forwardKey, true);
                     }
@@ -899,19 +933,41 @@ public class StashMover2 extends Module {
         return -1;
     }
 
-    // assumes there is 1 empty slot in the inventory somewhere
-    private void freeHotbar1()
-    {
-        if (mc.player.getInventory().getStack(0).getItem() != Items.AIR)
-        {
-            // shift click hotbar 1 slot to make it empty
-            mc.interactionManager.clickSlot(
-                mc.player.currentScreenHandler.syncId,
-                36, // Slot 0 in hotbar
-                0,
-                SlotActionType.QUICK_MOVE,
-                mc.player
-            );
+    // Méthode corrigée pour vider la hotbar slot 0 (appelée après fermeture d'écran)
+    private void freeHotbar1() {
+        if (mc.player.getInventory().getStack(0).getItem() != Items.AIR) {
+            ScreenHandler handler = mc.player.currentScreenHandler;
+            int hotbarSlot0 = getPlayerHotbarSlot0(handler);
+
+            // Vérifier qu'il existe un slot vide dans l'inventaire principal
+            int emptySlot = findEmptyPlayerSlot(handler);
+            if (emptySlot == -1 || emptySlot == hotbarSlot0) {
+                debugMsg("No empty slot available in inventory to free hotbar 0");
+                return;
+            }
+
+            // Étape 1 : Tenter un QUICK_MOVE pour déplacer l'item de hotbar 0
+            mc.interactionManager.clickSlot(handler.syncId, hotbarSlot0, 0, SlotActionType.QUICK_MOVE, mc.player);
+            debugMsg("Attempted QUICK_MOVE on hotbar slot 0 (ID: " + hotbarSlot0 + ")");
+
+            // Vérifier si l'opération a réussi
+            if (mc.player.getInventory().getStack(0).getItem() != Items.AIR) {
+                debugMsg("QUICK_MOVE failed, attempting PICKUP to move item from hotbar 0");
+                // Étape 2 : Clic gauche (PICKUP) sur hotbar 0 pour ramasser l'item
+                mc.interactionManager.clickSlot(handler.syncId, hotbarSlot0, 0, SlotActionType.PICKUP, mc.player);
+                // Étape 3 : Clic gauche (PICKUP) sur un slot vide pour déposer l'item
+                mc.interactionManager.clickSlot(handler.syncId, emptySlot, 0, SlotActionType.PICKUP, mc.player);
+                debugMsg("Attempted PICKUP to move item from hotbar 0 to slot " + emptySlot);
+
+                // Vérifier à nouveau si hotbar 0 est vide
+                if (mc.player.getInventory().getStack(0).getItem() != Items.AIR) {
+                    debugMsg("Failed to free hotbar slot 0 after PICKUP");
+                } else {
+                    debugMsg("Successfully freed hotbar slot 0 using PICKUP");
+                }
+            } else {
+                debugMsg("Successfully freed hotbar slot 0 using QUICK_MOVE");
+            }
         }
     }
 
@@ -980,20 +1036,31 @@ public class StashMover2 extends Module {
      * @param handler   The open container's ScreenHandler.
      * @param slotIndex The index of the slot that contains the ender pearl stack.
      */
+// Méthode améliorée pour déplacer EXACTEMENT UNE pearl vers hotbar slot 0
     private void moveOneItemFromSlotToHotbar1(ScreenHandler handler, int slotIndex) {
-        // 1) Pick up the entire stack from the source slot.
-        mc.interactionManager.clickSlot(handler.syncId, slotIndex, 0, SlotActionType.PICKUP, mc.player);
-        // 2) Find an empty slot in the player's inventory (the last 36 slots).
-        int emptySlot = findEmptyPlayerSlot(handler);
-        if (emptySlot != -1) {
-        // 3) Right-click the empty slot to deposit exactly one item.
-            mc.interactionManager.clickSlot(handler.syncId, 54, 1, SlotActionType.PICKUP, mc.player);
-              info("Deposited one item into slot " + emptySlot);
-        } else {
-            info("No empty slot found in player inventory for splitting stack.");
+        int hotbar0 = getPlayerHotbarSlot0(handler);
+
+        // Vérification : Assure que hotbar 0 est vide (retry si nécessaire)
+        Slot hotbarSlot = handler.getSlot(hotbar0);
+        if (hotbarSlot.hasStack()) {
+            debugMsg("Hotbar slot 0 not empty, freeing it again");
+            freeHotbar1();  // Retry vidage (au cas où)
+            if (hotbarSlot.hasStack()) {
+                info("Failed to free hotbar slot 0, aborting pearl move");
+                return;
+            }
         }
-        // 4) Left-click the source slot to return the remainder.
-        mc.interactionManager.clickSlot(handler.syncId, slotIndex, 0, SlotActionType.PICKUP, mc.player);
+
+        // 1) Ramasser tout le stack du slot source
+        clickSlot(handler, slotIndex, 0, SlotActionType.PICKUP);
+
+        // 2) Déposer UNE pearl en cliquant droit sur hotbar 0
+        clickSlot(handler, hotbar0, 1, SlotActionType.PICKUP);
+
+        // 3) Redéposer le reste dans le slot source
+        clickSlot(handler, slotIndex, 0, SlotActionType.PICKUP);
+
+        debugMsg("Moved one pearl to hotbar 0, redeposited remainder");
     }
 
     private void clickSlot(ScreenHandler handler, int slotId) {
