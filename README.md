@@ -11,7 +11,7 @@
 - StashMover modules
     - Added and updated to 1.21.5 from https://github.com/miles352/meteor-stash-mover
     - Optimized to be faster
-    - Deposit Chest has been configured for faster operations (stash model to build: https://www.youtube.com/watch?v=XvyPy1cJBYQ)
+    - Deposit Chest has been configured for faster operations (stash model to build: https://www.youtube.com/watch?v=R78TuVL54IE)
     - No more deposit chunk to configure
     - Better management of pearl statis chamber to prevent water blocked
     - Working on (i think) all server support whispering
