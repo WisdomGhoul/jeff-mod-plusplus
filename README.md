@@ -15,7 +15,7 @@
     - No more deposit chunk to configure
     - Better management of pearl statis chamber to prevent water blocked
     - Working on (i think) all server support whispering
-    - Need to work with : KillAura (any mode to kill potential endermites), a backup pearl (rare case when pearls are not thrown correctly)
+    - Need to work with : KillAura (any mode to kill potential endermites), a backup pearl (rare case when pearls are not thrown correctly), Baritone AssumeWalkOnWater = true
 - ChatSigns
     - Display signs reachable in your render-distance in chat
     - TO:DO Click on the desired signs to enable a tracer
