@@ -10,7 +10,11 @@
 - (almost) every modules from jeff mod are included, updated
 - StashMover modules
     - Added and updated to 1.21.5 from https://github.com/miles352/meteor-stash-mover
-    - Untested yet, may be unstable
+    - Optimized to be faster
+    - Deposit Chest has been configured for faster operations (stash model to build: https://www.youtube.com/watch?v=XvyPy1cJBYQ)
+    - No more deposit chunk to configure
+    - Better management of pearl statis chamber to prevent water blocked
+    - Working on (i think) all server support whispering
 - ChatSigns
     - Display signs reachable in your render-distance in chat
     - TO:DO Click on the desired signs to enable a tracer
