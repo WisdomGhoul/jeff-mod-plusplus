@@ -2,33 +2,41 @@ package com.stash.hunt.modules;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.pathing.goals.GoalBlock;
-import meteordevelopment.meteorclient.events.entity.player.InteractItemEvent;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import meteordevelopment.meteorclient.events.entity.player.PlayerMoveEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.ChunkDataEvent;
+import meteordevelopment.meteorclient.events.world.PlaySoundEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.systems.modules.player.ChestSwap;
+import meteordevelopment.meteorclient.systems.modules.world.Timer;
 import meteordevelopment.meteorclient.utils.Utils;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.FireworkRocketItem;
+import net.minecraft.entity.MovementType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.*;
-import net.minecraft.network.packet.s2c.play.HealthUpdateS2CPacket;
+import net.minecraft.network.packet.s2c.play.CloseScreenS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerSpawnPositionS2CPacket;
 
 import com.stash.hunt.Addon;
-import net.minecraft.util.Hand;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.screen.sync.ItemStackHash;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
+
+import java.util.List;
 
 import static com.stash.hunt.Utils.*;
 
@@ -44,6 +52,39 @@ public class ElytraFlyPlusPlus extends Module {
         .build()
     );
 
+    private final Setting<Boolean> motionYBoost = sgGeneral.add(new BoolSetting.Builder()
+        .name("Motion Y Boost")
+        .description("Greatly increases speed by cancelling Y momentum.")
+        .defaultValue(false)
+        .visible(bounce::get)
+        .build()
+    );
+
+    private final Setting<Boolean> onlyWhileColliding = sgGeneral.add(new BoolSetting.Builder()
+        .name("Only While Colliding")
+        .description("Only enables motion y boost if colliding with a wall.")
+        .defaultValue(true)
+        .visible(() -> bounce.get() && motionYBoost.get())
+        .build()
+    );
+
+    private final Setting<Boolean> tunnelBounce = sgGeneral.add(new BoolSetting.Builder()
+        .name("Tunnel Bounce")
+        .description("Allows you to bounce in 1x2 tunnels. This should not be on if you are not in a tunnel.")
+        .defaultValue(false)
+        .visible(() -> bounce.get() && motionYBoost.get())
+        .build()
+    );
+
+    private final Setting<Double> speed = sgGeneral.add(new DoubleSetting.Builder()
+        .name("Speed")
+        .description("The speed in blocks per second to keep you at.")
+        .defaultValue(100.0)
+        .sliderRange(20, 250)
+        .visible(() -> bounce.get() && motionYBoost.get())
+        .build()
+    );
+
     private final Setting<Boolean> lockPitch = sgGeneral.add(new BoolSetting.Builder()
         .name("Lock Pitch")
         .description("Whether to lock your pitch when bounce is enabled.")
@@ -56,6 +97,7 @@ public class ElytraFlyPlusPlus extends Module {
         .name("Pitch")
         .description("The pitch to set when bounce is enabled.")
         .defaultValue(90.0)
+        .sliderRange(-90, 90)
         .visible(() -> bounce.get() && lockPitch.get())
         .build()
     );
@@ -70,7 +112,8 @@ public class ElytraFlyPlusPlus extends Module {
 
     private final Setting<Boolean> useCustomYaw = sgGeneral.add(new BoolSetting.Builder()
         .name("Use Custom Yaw")
-        .description("Enable this if you want to use a yaw that isn't a factor of 45.")
+        .description("Enable this if you want to use a yaw that isn't a factor of 45. WARNING: This effects the baritone goal for obstacle passer, " +
+            "use the default Rotations module if you only want a different yawlock.")
         .defaultValue(false)
         .visible(bounce::get)
         .build()
@@ -78,8 +121,10 @@ public class ElytraFlyPlusPlus extends Module {
 
     private final Setting<Double> yaw = sgGeneral.add(new DoubleSetting.Builder()
         .name("Yaw")
-        .description("The yaw to set when bounce is enabled. This is auto set to the closest 45 deg angle to you unless Use Custom Yaw is enabled.")
+        .description("The yaw to set when bounce is enabled. This is auto set to the closest 45 deg angle to you unless Use Custom Yaw is enabled. " +
+            "WARNING: This effects the baritone goal for obstacle passer, use the default Rotations module if you only want a different yawlock.")
         .defaultValue(0.0)
+        .sliderRange(0, 359)
         .visible(() -> bounce.get() && useCustomYaw.get())
         .build()
     );
@@ -126,7 +171,7 @@ public class ElytraFlyPlusPlus extends Module {
 
     private final Setting<Integer> targetY = sgObstaclePasser.add(new IntSetting.Builder()
         .name("Y Level")
-        .description("The Y level to bounce at.")
+        .description("The Y level to bounce at. This must be correct or bounce will not start properly.")
         .defaultValue(120)
         .visible(() -> bounce.get() && highwayObstaclePasser.get())
         .build()
@@ -160,10 +205,18 @@ public class ElytraFlyPlusPlus extends Module {
         .build()
     );
 
+    private final Setting<Boolean> fakeFly = sgGeneral.add(new BoolSetting.Builder()
+        .name("Chestplate / Fakefly")
+        .description("Lets you fly using a chestplate to use almost 0 elytra durability. Must have elytra in hotbar.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<Boolean> toggleElytra = sgGeneral.add(new BoolSetting.Builder()
         .name("Toggle Elytra")
         .description("Equips an elytra on activate, and a chestplate on deactivate.")
         .defaultValue(false)
+        .visible(() -> !fakeFly.get())
         .build()
     );
 
@@ -181,12 +234,19 @@ public class ElytraFlyPlusPlus extends Module {
 
     private boolean elytraToggled = false;
 
+    private Vec3d lastUnstuckPos;
+    private int stuckTimer = 0;
+
     @EventHandler
     private void onReceivePacket(PacketEvent.Receive event)
     {
         if (event.packet instanceof PlayerPositionLookS2CPacket packet)
         {
-            onActivate();
+//            onActivate();
+        }
+        else if (event.packet instanceof CloseScreenS2CPacket)
+        {
+            event.cancel();
         }
     }
 
@@ -201,6 +261,9 @@ public class ElytraFlyPlusPlus extends Module {
         paused = false;
         waitingForChunksToLoad = false;
         elytraToggled = false;
+        lastPos = mc.player.getPos();
+        lastUnstuckPos = mc.player.getPos();
+        stuckTimer = 0;
 
         // I don't know any other way to fix this stupid shit
         if (bounce.get() && mc.player.getPos().multiply(1, 0, 1).length() >= 100)
@@ -240,6 +303,36 @@ public class ElytraFlyPlusPlus extends Module {
         }
     }
 
+    private Vec3d lastPos;
+
+    @EventHandler
+    private void onPlayerMove(PlayerMoveEvent event) {
+        if (mc.player == null || event.type != MovementType.SELF || !enabled() || !motionYBoost.get() || !bounce.get()) return;
+
+        if (onlyWhileColliding.get() && !mc.player.horizontalCollision) return;
+
+        if (lastPos != null)
+        {
+            double speedBps = mc.player.getPos().subtract(lastPos).multiply(20, 0, 20).length();
+
+            Timer timer = Modules.get().get(Timer.class);
+            if (timer.isActive()) {
+                speedBps *= timer.getMultiplier();
+            }
+
+            if (mc.player.isOnGround() && mc.player.isSprinting() && speedBps < speed.get())
+            {
+                if (speedBps > 20 || tunnelBounce.get())
+                {
+                    ((IVec3d) event.movement).meteor$setY(0);
+                }
+                mc.player.setVelocity(mc.player.getVelocity().x, 0.0, mc.player.getVelocity().z);
+            }
+        }
+
+        lastPos = mc.player.getPos();
+    }
+
     @Override
     public void onDeactivate()
     {
@@ -255,7 +348,7 @@ public class ElytraFlyPlusPlus extends Module {
 
         mc.player.setSprinting(startSprinting);
 
-        if (toggleElytra.get())
+        if (toggleElytra.get() && !fakeFly.get())
         {
             if (!mc.player.getEquippedStack(EquipmentSlot.CHEST).getItem().toString().contains("chestplate")) {
                 Modules.get().get(ChestSwap.class).swap();
@@ -277,7 +370,7 @@ public class ElytraFlyPlusPlus extends Module {
     {
         if (mc.player == null || mc.player.getAbilities().allowFlying) return;
 
-        if (toggleElytra.get() && !elytraToggled)
+        if (toggleElytra.get() && !fakeFly.get() && !elytraToggled)
         {
             if (!(mc.player.getEquippedStack(EquipmentSlot.CHEST).getItem().equals(Items.ELYTRA)))
             {
@@ -290,6 +383,7 @@ public class ElytraFlyPlusPlus extends Module {
         }
 
         if (enabled()) mc.player.setSprinting(true);
+
         if (bounce.get())
         {
             if (tempPath != null && mc.player.getBlockPos().getSquaredDistance(tempPath) < 500)
@@ -309,12 +403,21 @@ public class ElytraFlyPlusPlus extends Module {
                 return;
             }
 
-            // Length check to fix weird issue where goal gets set to 0 0 when going through queue, even though it gets reset. Likely due to bad connection.
-            if (highwayObstaclePasser.get() && mc.player.getPos().length() > 100 && (mc.player.getY() < targetY.get()
-                || mc.player.getY() > targetY.get() + 2
-                || mc.player.horizontalCollision)
-                || portalTrap != null && portalTrap.getSquaredDistance(mc.player.getBlockPos()) < portalAvoidDistance.get() * portalAvoidDistance.get()
-                || waitingForChunksToLoad)
+            if (mc.player.squaredDistanceTo(lastUnstuckPos) < 25)
+            {
+                stuckTimer++;
+            }
+            else
+            {
+                stuckTimer = 0;
+                lastUnstuckPos = mc.player.getPos();
+            }
+
+            if (highwayObstaclePasser.get() && mc.player.getPos().length() > 100 && // > 100 check needed bc server sends queue coordinates when joining in first tick causing goal coordinates to be set to (0, 0)
+                (mc.player.getY() < targetY.get() || mc.player.getY() > targetY.get() + 2 || (mc.player.horizontalCollision && !mc.player.collidedSoftly) // collisions / out of highway
+                || (portalTrap != null && portalTrap.getSquaredDistance(mc.player.getBlockPos()) < portalAvoidDistance.get() * portalAvoidDistance.get()) // portal trap detection
+                || waitingForChunksToLoad // waiting for chunks to load
+                || stuckTimer > 50))
             {
                 waitingForChunksToLoad = false;
                 paused = true;
@@ -365,9 +468,13 @@ public class ElytraFlyPlusPlus extends Module {
                 // keep jumping
                 paused = false;
                 if (!enabled()) return;
-                if (mc.player.isOnGround())
+
+                if (!fakeFly.get())
                 {
-                    mc.player.jump();
+                    if (mc.player.isOnGround() && (!motionYBoost.get() || Utils.getPlayerSpeed().multiply(1, 0, 1).length() < speed.get()))
+                    {
+                        mc.player.jump();
+                    }
                 }
 
                 // set yaw and pitch
@@ -384,22 +491,103 @@ public class ElytraFlyPlusPlus extends Module {
 
         if (enabled())
         {
-            mc.player.networkHandler.sendPacket(new ClientCommandC2SPacket(
-                mc.player,
-                ClientCommandC2SPacket.Mode.START_FALL_FLYING
-            ));
+            if (fakeFly.get())
+            {
+                doGrimEflyStuff();
+            }
+            else
+            {
+                sendStartFlyingPacket();
+            }
         }
     }
 
     public boolean enabled()
     {
-        return this.isActive() && !paused && mc.player != null && mc.player.getEquippedStack(EquipmentSlot.CHEST).getItem().toString().contains("elytra");
+        return this.isActive() && !paused && mc.player != null && (fakeFly.get() || mc.player.getEquippedStack(EquipmentSlot.CHEST).getItem().equals(Items.ELYTRA));
+    }
+
+    private void doGrimEflyStuff()
+    {
+        FindItemResult itemResult = InvUtils.findInHotbar(Items.ELYTRA);
+        if (!itemResult.found()) return;
+
+        swapToItem(itemResult.slot());
+
+        sendStartFlyingPacket();
+
+        if (bounce.get() && mc.player.isOnGround() && (!motionYBoost.get() || Utils.getPlayerSpeed().multiply(1, 0, 1).length() < speed.get()))
+        {
+            mc.player.jump();
+        }
+
+        swapToItem(itemResult.slot());
+
+    }
+
+    @EventHandler
+    private void onPlaySound(PlaySoundEvent event)
+    {
+        if (!fakeFly.get()) return;
+        List<Identifier> armorEquipSounds = List.of(
+            Identifier.of("minecraft:item.armor.equip_generic"),
+            Identifier.of("minecraft:item.armor.equip_netherite"),
+            Identifier.of("minecraft:item.armor.equip_elytra"),
+            Identifier.of("minecraft:item.armor.equip_diamond"),
+            Identifier.of("minecraft:item.armor.equip_gold"),
+            Identifier.of("minecraft:item.armor.equip_iron"),
+            Identifier.of("minecraft:item.armor.equip_chain"),
+            Identifier.of("minecraft:item.armor.equip_leather"),
+            Identifier.of("minecraft:item.elytra.flying")
+        );
+        for (Identifier identifier : armorEquipSounds) {
+            if (identifier.equals(event.sound.getId())) {
+                event.cancel();
+                break;
+            }
+        }
+    }
+
+    // 38 is the meteor mapping for chestplate
+    // serverside uses default mappings: https://imgs.search.brave.com/cyvAxjIhLweeF1qeRXpC_8ESRlImhUmMGWbV_n2to_A/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9jNGsz/LmdpdGh1Yi5pby93/aWtpLnZnL2ltYWdl/cy8xLzEzL0ludmVu/dG9yeS1zbG90cy5w/bmc
+    private void swapToItem(int slot) {
+        ItemStack chestItem = mc.player.getInventory().getStack(38);
+        ItemStack hotbarSwapItem = mc.player.getInventory().getStack(slot);
+
+        Int2ObjectMap<ItemStackHash> changedSlots = new Int2ObjectOpenHashMap<>();
+        changedSlots.put(6, ItemStackHash.fromItemStack(hotbarSwapItem, mc.getNetworkHandler().method_68823()));
+        changedSlots.put(slot + 36, ItemStackHash.fromItemStack(chestItem, mc.getNetworkHandler().method_68823()));
+
+        sendSwapPacket(changedSlots, (byte)slot);
+    }
+
+    private void sendStartFlyingPacket() {
+        if (mc.player == null) return;
+        mc.player.networkHandler.sendPacket(new ClientCommandC2SPacket(
+            mc.player,
+            ClientCommandC2SPacket.Mode.START_FALL_FLYING
+        ));
+    }
+
+    private void sendSwapPacket(Int2ObjectMap<ItemStackHash> changedSlots, byte buttonNum) {
+        int syncId  = mc.player.currentScreenHandler.syncId;
+        int stateId = mc.player.currentScreenHandler.getRevision();
+
+        mc.player.networkHandler.sendPacket(new ClickSlotC2SPacket(
+            syncId,
+            stateId,
+            (short) 6,
+            buttonNum,
+            SlotActionType.SWAP,
+            changedSlots,
+            ItemStackHash.EMPTY
+        ));
     }
 
     @EventHandler
     private void onChunkData(ChunkDataEvent event)
     {
-        if (!avoidPortalTraps.get()) return;
+        if (!avoidPortalTraps.get() || !highwayObstaclePasser.get()) return;
         ChunkPos pos = event.chunk().getPos();
 
         BlockPos centerPos = pos.getCenterAtY(targetY.get());

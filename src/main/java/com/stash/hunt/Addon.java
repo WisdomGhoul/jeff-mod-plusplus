@@ -25,13 +25,11 @@ public class Addon extends MeteorAddon {
         LOG.info("Initializing Jefff Mod");
 
         Modules.get().add(new SearchArea());
-//        Modules.get().add(new AutoLogPlus());
         Modules.get().add(new GotoPosition());
         Modules.get().add(new ChestIndex());
         Modules.get().add(new HighlightOldLava());
         Modules.get().add(new VanityESP());
         Modules.get().add(new AFKVanillaFly());
-//        Modules.get().add(new AutoPortal());
         Modules.get().add(new Pitch40Util());
 //        Modules.get().add(new AutoTrade());
 //        Modules.get().add(new XPBot());
@@ -46,14 +44,6 @@ public class Addon extends MeteorAddon {
 //        Modules.get().add(new StashMover2());
 //        Modules.get().add(new StashMoverListener());
 //        Modules.get().add(new PacketGrimFly());
-//        Modules.get().add(new AutoEXPPlus());
-//        Modules.get().add(new LavaESP());
-        Modules.get().add(new NoKillAuraFly());
-        Modules.get().add(new ElytraReplace());
-        Modules.get().add(new ChatSigns());
-        Modules.get().add(new StashMover2());
-        Modules.get().add(new StashMoverListener());
-        Modules.get().add(new AutoPortal());
 
         boolean baritoneLoaded = checkModLoaded("baritone", "baritone-meteor");
         boolean xaeroWorldMapLoaded = checkModLoaded("xaeroworldmap");

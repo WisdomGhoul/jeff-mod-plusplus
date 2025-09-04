@@ -5,7 +5,8 @@
   "client": [
     "LivingEntityMixin",
     "EntityMixin",
-    "KeyBindingMixin"
+    "KeyBindingMixin",
+    "XaeroDrawingMixin"
   ],
   "injectors": {
     "defaultRequire": 1

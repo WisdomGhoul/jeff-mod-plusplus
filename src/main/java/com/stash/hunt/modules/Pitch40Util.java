@@ -29,6 +29,7 @@ public class Pitch40Util extends Module {
         .name("Bound Gap")
         .description("The gap between the upper and lower bounds. Used when reconnecting, or when at max height if Auto Adjust Bounds is enabled.")
         .defaultValue(60)
+        .sliderRange(50, 100)
         .build()
     );
 
@@ -43,6 +44,7 @@ public class Pitch40Util extends Module {
         .name("Auto Firework Velocity Threshold")
         .description("Velocity must be below this value when going up for firework to activate.")
         .defaultValue(-0.05)
+        .sliderRange(-0.5, 1)
         .visible(autoFirework::get)
         .build()
     );
@@ -51,6 +53,7 @@ public class Pitch40Util extends Module {
         .name("Auto Firework Cooldown (ticks)")
         .description("Cooldown after using a firework in ticks.")
         .defaultValue(10)
+        .sliderRange(0, 100)
         .visible(autoFirework::get)
         .build()
     );

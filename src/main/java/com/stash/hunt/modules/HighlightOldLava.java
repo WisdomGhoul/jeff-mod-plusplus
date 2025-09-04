@@ -42,21 +42,21 @@ public class HighlightOldLava extends Module
     private final Setting<Integer> searchAbove = sgGeneral.add(new IntSetting.Builder()
         .name("Search Above")
         .description("Y value to look above")
-        .range(0, 120)
+        .sliderRange(0, 120)
         .build()
     );
 
     private final Setting<Integer> lavaHeight = sgGeneral.add(new IntSetting.Builder()
         .name("Lava Height")
         .description("The height of the lava to count as already loaded")
-        .range(1, 30)
+        .sliderRange(1, 30)
         .build()
     );
 
     private final Setting<Integer> renderDistance = sgGeneral.add(new IntSetting.Builder()
         .name("Render Distance")
         .description("How far away to render the blocks.")
-        .range(0, 512)
+        .sliderRange(0, 512)
         .build()
     );
 

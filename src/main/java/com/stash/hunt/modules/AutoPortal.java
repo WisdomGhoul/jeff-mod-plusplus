@@ -6,12 +6,11 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.utils.player.FindItemResult;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -24,11 +23,13 @@ import java.util.List;
 
 public class AutoPortal extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final List<BlockPos> waitingForBreak = new ArrayList<>();
+
 
     private final Setting<Integer> placeDelay = sgGeneral.add(new IntSetting.Builder()
         .name("place-delay")
         .description("Ticks between each obsidian placement.")
-        .defaultValue(2)
+        .defaultValue(1)
         .sliderRange(1, 20)
         .build()
     );
@@ -68,97 +69,97 @@ public class AutoPortal extends Module {
     );
 
     private final List<BlockPos> portalBlocks = new ArrayList<>();
-    private int index = 0;
     private int delay = 0;
-    private Direction chosenDirection;
+    private int index = 0;
 
     public AutoPortal() {
-        super(Addon.CATEGORY, "AutoPortal", "Automatically builds a Nether portal near the cursor. Not working on 9B, WIP");
+        super(Addon.CATEGORY, "AutoPortal", "For the Base Hunter who has places to be.");
+
     }
 
     @Override
     public void onActivate() {
-        portalBlocks.clear();
-        index = 0;
-        delay = 0;
-        chosenDirection = null;
-
-        BlockHitResult hitResult = mc.crosshairTarget instanceof BlockHitResult bhr ? bhr : null;
-        BlockPos target = (hitResult != null) ? hitResult.getBlockPos() : mc.player.getBlockPos();
-
-        // Cherche un emplacement valide autour du curseur
-        int radius = 3;
-        boolean found = false;
-        outer:
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                BlockPos base = target.add(dx, 1, dz);
-                for (Direction dir : Direction.Type.HORIZONTAL) {
-                    if (canBuildPortal(base, dir)) {
-                        buildPortalBlocks(base, dir);
-                        chosenDirection = dir;
-                        found = true;
-                        break outer;
-                    }
-                }
+        int obsidianCount = 0;
+        for (int i = 0; i < 36; i++) {
+            if (mc.player.getInventory().getStack(i).getItem() == Items.OBSIDIAN) {
+                obsidianCount += mc.player.getInventory().getStack(i).getCount();
             }
         }
 
-        if (!found) {
-            error("Aucun emplacement valide trouvé pour construire le portail.");
+        if (obsidianCount < 10) {
+            error("Not enough obsidian to build the portal (need at least 10)!");
             toggle();
             return;
         }
-
-        // Sélection de l'obsidienne dans la hotbar
-        FindItemResult obsidianResult = InvUtils.find(Items.OBSIDIAN);
-        if (!obsidianResult.found()) {
-            error("Pas d'obsidienne dans la hotbar.");
-            toggle();
-            return;
-        }
-        InvUtils.swap(obsidianResult.slot(), false);
-    }
-
-    private boolean canBuildPortal(BlockPos base, Direction right) {
-        int[][] offsets = {
-            {0,0},{1,0},{2,0},{3,0},
-            {0,1},{0,2},{0,3},{0,4},
-            {3,1},{3,2},{3,3},{3,4},
-            {1,4},{2,4}
-        };
-        for (int[] off : offsets) {
-            BlockPos pos = base.add(right.getOffsetX() * off[0], off[1], right.getOffsetZ() * off[0]);
-
-            // Vérifie que le bloc est à portée (reach distance 5)
-            double distance = mc.player.getPos().distanceTo(Vec3d.ofCenter(pos));
-            if (distance > 5.0) return false;
-
-            if (!mc.world.getBlockState(pos).isAir() && !mc.world.getBlockState(pos).isReplaceable()) return false;
-            if (off[1] == 0 && !mc.world.getBlockState(pos.down()).isSolidBlock(mc.world, pos.down())) return false;
-        }
-        return true;
-    }
-
-    private void buildPortalBlocks(BlockPos base, Direction right) {
         portalBlocks.clear();
-        portalBlocks.add(base.add(0, 0, 0));
-        portalBlocks.add(base.add(right.getOffsetX(), 0, right.getOffsetZ()));
-        portalBlocks.add(base.add(right.getOffsetX() * 2, 0, right.getOffsetZ() * 2));
-        portalBlocks.add(base.add(right.getOffsetX() * 3, 0, right.getOffsetZ() * 3));
+        index = 0;
+        delay = 0;
 
-        portalBlocks.add(base.add(0, 1, 0));
-        portalBlocks.add(base.add(0, 2, 0));
-        portalBlocks.add(base.add(0, 3, 0));
-        portalBlocks.add(base.add(0, 4, 0));
+        // directly in front + block position check
+        Direction forward = mc.player.getHorizontalFacing();
+        Direction right = forward.rotateYClockwise();
+        BlockPos standingPos = mc.player.getBlockPos(); // temp mutable ref
+        BlockPos blockBelow = standingPos.down();
+        double blockHeight = mc.world.getBlockState(blockBelow).getCollisionShape(mc.world, blockBelow).getMax(Direction.Axis.Y);
+        // (height < 1.0)
+        if (blockHeight < 1.0) {
+            standingPos = standingPos.up();
+        }
+        BlockPos base = standingPos
+            .offset(forward, 2)
+            .offset(right, -1);
+        // duplicate check
+        int obsidianCheck = 0;
 
-        portalBlocks.add(base.add(right.getOffsetX() * 3, 1, right.getOffsetZ() * 3));
-        portalBlocks.add(base.add(right.getOffsetX() * 3, 2, right.getOffsetZ() * 3));
-        portalBlocks.add(base.add(right.getOffsetX() * 3, 3, right.getOffsetZ() * 3));
-        portalBlocks.add(base.add(right.getOffsetX() * 3, 4, right.getOffsetZ() * 3));
+        List<BlockPos> checkPositions = List.of(
+            base.offset(right, 1), base.offset(right, 2),
+            base.offset(right, 0).up(1), base.offset(right, 0).up(2), base.offset(right, 0).up(3),
+            base.offset(right, 3).up(1), base.offset(right, 3).up(2), base.offset(right, 3).up(3),
+            base.offset(right, 1).up(4), base.offset(right, 2).up(4)
+        );
+        // block obstruction check (temporary until fixed)
+        boolean obstructed = checkPositions.stream().anyMatch(pos -> !mc.world.getBlockState(pos).isReplaceable());
+        // will remove later once we fix portal block obstruction
+        if (obstructed) {
+            error("Portal area obstructed. Move and try again.");
+            portalBlocks.clear();
+            portalBlocks.addAll(checkPositions); // just render blocked frame
+            index = checkPositions.size(); // skip building
+            return;
+        }
 
-        portalBlocks.add(base.add(right.getOffsetX(), 4, right.getOffsetZ()));
-        portalBlocks.add(base.add(right.getOffsetX() * 2, 4, right.getOffsetZ() * 2));
+        for (BlockPos checkPos : checkPositions) {
+            if (mc.world.getBlockState(checkPos).getBlock().asItem() == Items.OBSIDIAN) {
+                obsidianCheck++;
+            }
+        }
+
+        if (obsidianCheck >= checkPositions.size()) {
+            error("A portal already exists here!");
+            toggle();
+            return;
+        }
+
+        portalBlocks.add(base.offset(right, 1));
+        portalBlocks.add(base.offset(right, 2));
+
+        for (int i = 1; i <= 3; i++) {
+            portalBlocks.add(base.offset(right, 0).up(i));
+        }
+
+        for (int i = 1; i <= 3; i++) {
+            portalBlocks.add(base.offset(right, 3).up(i));
+        }
+
+        portalBlocks.add(base.offset(right, 1).up(4));
+        portalBlocks.add(base.offset(right, 2).up(4));
+
+        for (int i = 0; i < 9; i++) {
+            if (mc.player.getInventory().getStack(i).getItem() == Items.OBSIDIAN) {
+                mc.player.getInventory().setSelectedSlot(i);
+                break;
+            }
+        }
     }
 
     @Override
@@ -166,7 +167,6 @@ public class AutoPortal extends Module {
         portalBlocks.clear();
         index = 0;
         delay = 0;
-        chosenDirection = null;
     }
 
     @EventHandler
@@ -175,28 +175,55 @@ public class AutoPortal extends Module {
         if (!(mc.player.getMainHandStack().getItem() instanceof BlockItem blockItem)) return;
         if (blockItem.getBlock().asItem() != Items.OBSIDIAN) return;
 
-        if (index >= portalBlocks.size()) return;
+        if (index >= portalBlocks.size()) {
+            toggle();
+            return;
+        }
 
         delay++;
         if (delay < placeDelay.get()) return;
-
         for (int i = 0; i < blocksPerTick.get() && index < portalBlocks.size(); i++, index++) {
             BlockPos pos = portalBlocks.get(index);
+            // prevent faulty portal placements (not being used due to boolean obstruction check above, but will fix in the future)
+            if (!mc.world.getBlockState(pos).isReplaceable()) {
+                if (!waitingForBreak.contains(pos) && mc.world.getBlockState(pos).getBlock().asItem() != Items.OBSIDIAN) {
+                    if (mc.interactionManager != null) {
+                        mc.interactionManager.attackBlock(pos, Direction.UP);
+                        mc.player.swingHand(Hand.MAIN_HAND);
+                        waitingForBreak.add(pos);
+                    }
+                }
+                index--; // loop again to finish placing
+                return;
+            }
+
+            waitingForBreak.remove(pos);
+
             BlockHitResult bhr = new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
-            mc.player.networkHandler.sendPacket(new PlayerInteractBlockC2SPacket(Hand.MAIN_HAND, bhr, mc.player.currentScreenHandler.getRevision()));
+
+            mc.player.networkHandler.sendPacket(new PlayerActionC2SPacket(
+                PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND, BlockPos.ORIGIN, Direction.DOWN));
+            mc.player.networkHandler.sendPacket(new PlayerInteractBlockC2SPacket(
+                Hand.OFF_HAND, bhr, mc.player.currentScreenHandler.getRevision() + 2));
+            mc.player.networkHandler.sendPacket(new PlayerActionC2SPacket(
+                PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND, BlockPos.ORIGIN, Direction.DOWN));
             mc.player.swingHand(Hand.MAIN_HAND);
         }
         delay = 0;
 
-        // Auto-light
         if (index >= portalBlocks.size()) {
-            FindItemResult flintResult = InvUtils.findInHotbar(Items.FLINT_AND_STEEL);
-            if (flintResult.found()) {
-                InvUtils.swap(flintResult.slot(), false);
-                BlockPos firePos = portalBlocks.get(0).up();
-                BlockHitResult fireHit = new BlockHitResult(Vec3d.ofCenter(firePos), Direction.UP, firePos, false);
-                mc.player.networkHandler.sendPacket(new PlayerInteractBlockC2SPacket(Hand.MAIN_HAND, fireHit, mc.player.currentScreenHandler.getRevision()));
-                mc.player.swingHand(Hand.MAIN_HAND);
+            // auto light
+            for (int i = 0; i < 9; i++) {
+                if (mc.player.getInventory().getStack(i).getItem() == Items.FLINT_AND_STEEL) {
+                    mc.player.getInventory().setSelectedSlot(i);
+
+                    BlockPos firePos = portalBlocks.get(0).up();
+                    BlockHitResult fireHit = new BlockHitResult(Vec3d.ofCenter(firePos), Direction.UP, firePos, false);
+
+                    mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, fireHit);
+                    mc.player.swingHand(Hand.MAIN_HAND);
+                    break;
+                }
             }
             info("Portal complete. AutoPortal disabled.");
             toggle();
@@ -207,7 +234,8 @@ public class AutoPortal extends Module {
     private void onRender(Render3DEvent event) {
         if (!render.get()) return;
         for (int i = index; i < portalBlocks.size(); i++) {
-            event.renderer.box(portalBlocks.get(i), sideColor.get(), lineColor.get(), shapeMode.get(), 0);
+            BlockPos pos = portalBlocks.get(i);
+            event.renderer.box(pos, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
         }
     }
 }

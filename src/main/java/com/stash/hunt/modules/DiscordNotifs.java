@@ -94,8 +94,8 @@ public class DiscordNotifs extends Module
     );
 
     private final Setting<Boolean> chat = sgGeneral.add(new BoolSetting.Builder()
-        .name("Logs chat messages.")
-        .description("Logs all chat messages")
+        .name("Chat Messages")
+        .description("Logs chat messages")
         .defaultValue(false)
         .visible(() -> !logAll.get())
         .build()
@@ -206,7 +206,7 @@ public class DiscordNotifs extends Module
         for (Text sibling : message.getSiblings())
         {
             TextColor color = sibling.getStyle().getColor();
-            if (color != null && color.getRgb() == 11141120)
+            if (color != null && color.getRgb() == 43690)
             {
                 handleMessage(message.getString(), MessageType.DEATH);
                 return;
@@ -280,8 +280,9 @@ public class DiscordNotifs extends Module
             message = "[" + timestamp + "] " + message;
         }
         String json = "{\n" +
-            "\"content\": \"```" + message + "```\"\n" +
-            "}";
+            "\"embeds\": [{" +
+                "\"description\": \"" + message + "\"" +
+            "}]}";
         // use threads so the game doesnt lag when sending a ton of webhooks
         new Thread(() -> sendWebhook(webhookURL.get(), json, null)).start();
     }
