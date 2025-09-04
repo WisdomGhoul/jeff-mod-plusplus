@@ -80,29 +80,27 @@ public class TrailFollower extends Module
         .visible(() -> trailEndBehavior.get() == TrailEndBehavior.FLY_TOWARDS_YAW)
         .build()
     );
-
     // changed to an enum dropdown for fly selection
-    public enum OverworldFlightMode {
+    public enum FlightMode {
         VANILLA,
-        PITCH40,
-        OTHER
+        PITCH40
     }
 
     public enum NetherPathMode {
         AVERAGE,
-        OTHER
+        CHUNK
     }
 
-    public final Setting<OverworldFlightMode> overworldFlightMode = sgGeneral.add(new EnumSetting.Builder<OverworldFlightMode>()
+    public final Setting<FlightMode> flightMode = sgGeneral.add(new EnumSetting.Builder<FlightMode>()
         .name("Overworld Flight Mode")
-        .description("Choose how TrailFollower flies in Overworld. If other is selected then nothing will be automatically enabled, instead just your yaw will be changed to point towards the trail.")
-        .defaultValue(OverworldFlightMode.PITCH40)
+        .description("Choose how TrailFollower flies in Overworld.")
+        .defaultValue(FlightMode.PITCH40)
         .build()
     );
 
     public final Setting<NetherPathMode> netherPathMode = sgGeneral.add(new EnumSetting.Builder<NetherPathMode>()
         .name("Nether Path Mode")
-        .description("Choose how TrailFollower does baritone pathing in Nether. If other is selected then nothing will be automatically enabled, instead just your yaw will be changed to point towards the trail.")
+        .description("Choose how TrailFollower does baritone pathing in Nether.")
         .defaultValue(NetherPathMode.AVERAGE)
         .build()
     );
@@ -111,7 +109,7 @@ public class TrailFollower extends Module
         .name("Auto Firework")
         .description("Uses a firework automatically if your velocity is too low.")
         .defaultValue(true)
-        .visible(() -> overworldFlightMode.get() == OverworldFlightMode.PITCH40)
+        .visible(() -> flightMode.get() == FlightMode.PITCH40)
         .build()
     );
 
@@ -145,13 +143,6 @@ public class TrailFollower extends Module
         .defaultValue(500)
         .sliderRange(100, 2000)
         .onChanged(value -> pathDistanceActual = value)
-        .build()
-    );
-
-    public final Setting<FollowMode> flightMethod = sgAdvanced.add(new EnumSetting.Builder<FollowMode>()
-        .name("Flight Method")
-        .description("Decided how the goals will be used. Leave this on AUTO unless you want to use yaw lock in the nether for example.")
-        .defaultValue(FollowMode.AUTO)
         .build()
     );
 
@@ -313,33 +304,27 @@ public class TrailFollower extends Module
                     return;
                 }
             }
-            if (flightMethod.get() != FollowMode.AUTO)
+            if (!currentDimension.equals(World.NETHER))
             {
-                followMode = flightMethod.get();
+                followMode = FollowMode.YAWLOCK;
+                info("You are in the overworld or end, basic yaw mode will be used.");
             }
             else
             {
-                if (!currentDimension.equals(World.NETHER))
-                {
-                    followMode = FollowMode.YAWLOCK;
-                    info("You are in the overworld or end, basic yaw mode will be used.");
+                try {
+                    Class.forName("baritone.api.BaritoneAPI");
+                    followMode = FollowMode.BARITONE;
+                    info("You are in the nether, baritone mode will be used.");
+                } catch (ClassNotFoundException e) {
+                    info("Baritone is required to trail follow in the nether. Disabling TrailFollower");
+                    this.toggle();
+                    return;
                 }
-                else
-                {
-                    try {
-                        Class.forName("baritone.api.BaritoneAPI");
-                        followMode = FollowMode.BARITONE;
-                        info("You are in the nether, baritone mode will be used.");
-                    } catch (ClassNotFoundException e) {
-                        info("Baritone is required to trail follow in the nether. Disabling TrailFollower");
-                        this.toggle();
-                        return;
-                    }
-                }
-            }
 
-            if (followMode == FollowMode.YAWLOCK && !mc.world.getRegistryKey().equals(World.NETHER)) {
-                if (overworldFlightMode.get() == OverworldFlightMode.PITCH40) {
+            }
+            // ***this block replaced the old pitch40 boolean toggle and is now controlled through the flightMode enum. swapped the pitch40.get() check (from the old boolsetting) for an enumsetting check (flightMode)
+            if (followMode == FollowMode.YAWLOCK) {
+                if (flightMode.get() == FlightMode.PITCH40) {
                     Class<? extends Module> pitch40Util = Pitch40Util.class;
                     Module pitch40UtilModule = Modules.get().get(pitch40Util);
                     if (!pitch40UtilModule.isActive()) {
@@ -351,7 +336,7 @@ public class TrailFollower extends Module
                             setting.set(true);
                         }
                     }
-                } else if (overworldFlightMode.get() == OverworldFlightMode.VANILLA) {
+                } else if (flightMode.get() == FlightMode.VANILLA) {
                     AFKVanillaFly afkVanillaFly = Modules.get().get(AFKVanillaFly.class);
                     if (!afkVanillaFly.isActive()) {
                         afkVanillaFly.toggle();
@@ -393,14 +378,13 @@ public class TrailFollower extends Module
                 break;
             }
             case YAWLOCK: {
-                if (mc.world == null || mc.world.getRegistryKey().equals(World.NETHER)) return;
-                if (overworldFlightMode.get() == OverworldFlightMode.VANILLA) {
+                if (flightMode.get() == FlightMode.VANILLA) {
                     AFKVanillaFly afkVanillaFly = Modules.get().get(AFKVanillaFly.class);
                     if (afkVanillaFly != null) {
                         afkVanillaFly.resetYLock();
                         if (afkVanillaFly.isActive()) afkVanillaFly.toggle();
                     }
-                } else if (overworldFlightMode.get() == OverworldFlightMode.PITCH40) {
+                } else if (flightMode.get() == FlightMode.PITCH40) {
                     Class<? extends Module> pitch40Util = Pitch40Util.class;
                     Module pitch40UtilModule = Modules.get().get(pitch40Util);
                     if (pitch40UtilModule.isActive()) {
@@ -435,6 +419,7 @@ public class TrailFollower extends Module
         {
             resetTrail();
             log("Trail timed out, stopping.");
+            // TODO: Add options for what to do next
             switch (trailEndBehavior.get())
             {
                 case DISABLE:
@@ -533,7 +518,7 @@ public class TrailFollower extends Module
                 break;
             }
             case YAWLOCK: {
-                mc.player.setYaw(Utils.smoothRotation(getActualYaw(mc.player.getYaw()), targetYaw, rotateScaling.get()));
+                mc.player.setYaw(smoothRotation(getActualYaw(mc.player.getYaw()), targetYaw));
                 break;
             }
         }
@@ -581,6 +566,7 @@ public class TrailFollower extends Module
                 currentDimension = World.OVERWORLD;
             }
         }
+
         // Check that the chunk is actually mapped, and that it is an old chunk
         if (!isValidChunk(chunkPos, currentDimension)) return;
 
@@ -618,7 +604,7 @@ public class TrailFollower extends Module
         // add chunks to the list
 
         double chunkAngle = Rotations.getYaw(pos);
-        double angleDiff = Utils.angleDifference(targetYaw, chunkAngle);
+        double angleDiff = angleDifference(targetYaw, chunkAngle);
         // was not able to add this before, but now can successfully filter out most other trails using the most recent chunk for pathing
         if (followingTrail && Math.abs(angleDiff) > maxTrailDeviation.get())
         {
@@ -714,6 +700,18 @@ public class TrailFollower extends Module
         return (yaw % 360 + 360) % 360;
     }
 
+    private float smoothRotation(double current, double target)
+    {
+        double difference = angleDifference(target, current);
+        return (float) (current + difference * rotateScaling.get());
+    }
+
+    private double angleDifference(double target, double current)
+    {
+        double diff = (target - current + 180) % 360 - 180;
+        return diff < -180 ? diff + 360 : diff;
+    }
+
     private void log(String message)
     {
         info(message);
@@ -723,9 +721,8 @@ public class TrailFollower extends Module
         }
     }
 
-    public enum FollowMode
+    private enum FollowMode
     {
-        AUTO,
         BARITONE,
         YAWLOCK
     }

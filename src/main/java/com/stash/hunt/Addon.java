@@ -31,19 +31,34 @@ public class Addon extends MeteorAddon {
         Modules.get().add(new VanityESP());
         Modules.get().add(new AFKVanillaFly());
         Modules.get().add(new Pitch40Util());
+        Modules.get().add(new AFKVanillaFly());
+        Modules.get().add(new AutoEXPPlus());
+        Modules.get().add(new AutoLogPlus());
+        Modules.get().add(new AutoPortal());
+        Modules.get().add(new BetterStashFinder());
+        Modules.get().add(new ChatSigns());
+        Modules.get().add(new ChestIndex());
+        Modules.get().add(new DiscordNotifs());
+        Modules.get().add(new ElytraFlyPlusPlus());
+        Modules.get().add(new ElytraReplace());
+        Modules.get().add(new FollowBaritonePath());
+        Modules.get().add(new GotoPosition());
+        Modules.get().add(new GrimAirPlace());
+        Modules.get().add(new HighlightOldLava());
+        Modules.get().add(new NoJumpDelay());
+        Modules.get().add(new NoKillAuraFly());
+        Modules.get().add(new OldChunkNotifier());
+        Modules.get().add(new Pitch40Util());
+        Modules.get().add(new StashMover2());
+        Modules.get().add(new StashMoverListener());
+        Modules.get().add(new TrailFollower());
+        Modules.get().add(new TrailMaker());
+        Modules.get().add(new VanityESP());
+
+
 //        Modules.get().add(new AutoTrade());
 //        Modules.get().add(new XPBot());
 //        Modules.get().add(new UnknownAccountNotifier());
-
-        Modules.get().add(new NoJumpDelay());
-        Modules.get().add(new GrimAirPlace());
-        Modules.get().add(new DiscordNotifs());
-//        Modules.get().add(new EndermanItemDetector());
-//        Modules.get().add(new GrimDuraFirework());
-//        Modules.get().add(new PacketTester());
-//        Modules.get().add(new StashMover2());
-//        Modules.get().add(new StashMoverListener());
-//        Modules.get().add(new PacketGrimFly());
 
         boolean baritoneLoaded = checkModLoaded("baritone", "baritone-meteor");
         boolean xaeroWorldMapLoaded = checkModLoaded("xaeroworldmap");
