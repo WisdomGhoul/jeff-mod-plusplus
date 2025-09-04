@@ -3,6 +3,7 @@ package com.stash.hunt;
 import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.meteorclient.utils.player.SlotUtils;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.item.Item;
@@ -18,8 +19,6 @@ import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.UnknownServiceException;
-import net.minecraft.entity.EquipmentSlot;
-
 
 public class Utils
 {
@@ -29,7 +28,7 @@ public class Utils
 
         // cant use a rocket if not wearing an elytra
         int elytraSwapSlot = -1;
-        if (elytraRequired && !mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA))
+        if (elytraRequired && !mc.player.getInventory().getStack(SlotUtils.ARMOR_START + 2).isOf(Items.ELYTRA))
         {
             FindItemResult itemResult = InvUtils.findInHotbar(Items.ELYTRA);
             if (!itemResult.found()) {
@@ -158,6 +157,17 @@ public class Utils
         return itemCount;
     }
 
+    public static float smoothRotation(double current, double target, double rotationScaling)
+    {
+        double difference = angleDifference(target, current);
+        return (float) (current + difference * rotationScaling);
+    }
+
+    public static double angleDifference(double target, double current)
+    {
+        double diff = (target - current + 180) % 360 - 180;
+        return diff < -180 ? diff + 360 : diff;
+    }
 
     public static void sendWebhook(String webhookURL, String title, String message, String pingID, String playerName)
     {
