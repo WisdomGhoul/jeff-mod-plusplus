@@ -1,13 +1,19 @@
-<h1 align="left">jeff mod++ | Updated to 1.21.5</h1>
+<h1 align="left">jeff mod++ | 32766's fork for 9b</h1>
 
 ###
 
 <p align="left">Here you'll be able to find jeff mod updated to 1.21.5, with some modifications to the module.<br>Everything is tested on 9b9t.<br>Won't answer any issue or message, if you feel to change something, just fork it and do your things</p>
 
 ###
+## Dependencies
+
+- Meteor 1.21.5
+- Xaero Minimap
+- Xaero Worldmap
+- Xaero Plus
 
 ## Features
-- (almost) every modules from jeff mod are included, updated
+- Every modules from jeff mod are included
 - StashMover modules
     - Added and updated to 1.21.5 from https://github.com/miles352/meteor-stash-mover
     - Optimized to be faster
@@ -47,7 +53,7 @@
    ```bash
    ./gradlew build
    ```
-   JAR in `build/libs/` (e.g., `jeff-mod-plusplus-addon-1.0.0.jar`).
+   JAR in `build/libs/` (e.g., `jeff-mod-plusplus.jar`).
 
 3. **Install**:
    Copy JAR to `.minecraft/mods/`. Launch Minecraft with Fabric + Meteor 1.21.5.
