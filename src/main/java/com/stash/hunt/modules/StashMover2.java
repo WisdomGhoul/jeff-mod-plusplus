@@ -1,5 +1,6 @@
 package com.stash.hunt.modules;
 
+import java.util.List;
 import baritone.api.BaritoneAPI;
 import baritone.api.pathing.goals.GoalNear;
 import com.google.gson.Gson;
@@ -47,6 +48,10 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.minecraft.entity.mob.EndermiteEntity;
+import net.minecraft.util.math.Box;
+import baritone.api.pathing.goals.GoalBlock;
+
 
 import java.io.*;
 import java.security.SecureRandom;
@@ -220,10 +225,12 @@ public class StashMover2 extends Module {
 
     private int pearlDelay = 0;
     private int pearlPitchDelay = 0;
+    private int attemptCount = 0;
     private int interactDelay = 0;
     private int portalDelay = 0;
     private int chestOpenDelay = 0;
     private int teleportDelay = 0;
+    private int debugCooldown = 0;
 
     private int quickMoveTimeout = 0;
     private int chestOpenTimeout = 0;
@@ -306,6 +313,7 @@ public class StashMover2 extends Module {
         MOVING_TO_LOOT_ENDER_CHEST,
         MOVING_TO_DEPOSIT_ENDER_CHEST,
         PEARLING,
+        HANDLING_ENDERMITE,
         AWAITING_PEARL,
         GETTING_PEARL,
         THROWING_PEARL,
@@ -596,6 +604,38 @@ public class StashMover2 extends Module {
             portalDelay = 100;
         }
 
+        if (state == State.HANDLING_ENDERMITE) {
+            if (teleportDelay > 0) {
+                teleportDelay--;
+                debugMsg("Waiting for teleport stabilization (delay: " + teleportDelay + ")");
+                return;
+            }
+
+            // Vérifier les entités proches pour une Endermite
+            Box box = mc.player.getBoundingBox().expand(10.0); // Rayon de 10 blocs
+            List<net.minecraft.entity.mob.EndermiteEntity> endermites = mc.world.getEntitiesByClass(net.minecraft.entity.mob.EndermiteEntity.class, box, e -> true);
+
+            if (!endermites.isEmpty()) {
+                debugMsg("Endermite detected nearby, pausing module until killed");
+                return; // Pause tant qu'une endermite est présente
+            }
+
+            // Pas d'endermite, vérifier la position au-dessus de soulSandPos
+            BlockPos targetPos = new BlockPos(soulSandPos.get().getX(), soulSandPos.get().getY() + 9, soulSandPos.get().getZ());
+            BlockPos playerPos = mc.player.getBlockPos();
+            if (playerPos.getX() != targetPos.getX() || playerPos.getZ() != targetPos.getZ() || playerPos.getY() < targetPos.getY()) {
+                debugMsg("Player not above soul sand at " + targetPos + ", pathing to position");
+                BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalBlock(targetPos));
+                return; // Attendre que Baritone atteigne la position
+            } else if (BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().isActive()) {
+                debugMsg("Baritone pathing active, waiting to reach " + targetPos);
+                return; // Attendre la fin du pathing
+            } else {
+                debugMsg("Player correctly positioned above soul sand, resuming to GETTING_PEARL");
+                state = State.GETTING_PEARL; // Reprendre le script
+            }
+        }
+
         if (state == State.GETTING_PEARL) {
             if (mc.player.getInventory().getStack(0).getItem().equals(Items.ENDER_PEARL)) {
                 state = State.THROWING_PEARL;
@@ -644,30 +684,61 @@ public class StashMover2 extends Module {
 
             // Vérifier si le joueur est submergé (sous l'eau)
             if (mc.player.isSubmergedInWater()) {
-                debugMsg("Player is submerged, attempting to float to surface");
-                // Forcer le joueur à regarder vers le haut pour faciliter la remontée
-                mc.player.setPitch(-45.0f); // Pitch négatif = regarder vers le haut
-                // Simuler une pression sur "avancer", "strafe gauche" et "sauter" pour remonter
-                setPressed(mc.options.forwardKey, true);
-                setPressed(mc.options.backKey, true);
-                setPressed(mc.options.leftKey, true);
-                setPressed(mc.options.rightKey, true);
-                setPressed(mc.options.jumpKey, true);
+                if (debugCooldown <= 0) {
+                    debugMsg("Player is submerged in water, attempting to move out (attempt " + attemptCount + ")");
+                    debugCooldown = 10; // Attendre 0.5 seconde avant le prochain message
+                }                // Forcer le joueur à regarder vers le haut pour faciliter la remontée
+                mc.player.setPitch(-60.0f); // Pitch prononcé pour contrer les courants
+                // Désactiver toutes les touches par défaut
+                setPressed(mc.options.forwardKey, false);
+                setPressed(mc.options.backKey, false);
+                setPressed(mc.options.leftKey, false);
+                setPressed(mc.options.rightKey, false);
+                setPressed(mc.options.jumpKey, false);
+
+                // Tentatives de mouvement
+                if (attemptCount < 2) { // Tentatives 0-1 : avancer + sauter
+                    setPressed(mc.options.forwardKey, true);
+                    setPressed(mc.options.jumpKey, true);
+                    debugMsg("Attempt " + attemptCount + ": Moving forward and jumping");
+                } else if (attemptCount < 4) { // Tentatives 2-3 : reculer + strafe gauche + sauter
+                    setPressed(mc.options.backKey, true);
+                    setPressed(mc.options.leftKey, true);
+                    setPressed(mc.options.jumpKey, true);
+                    debugMsg("Attempt " + attemptCount + ": Moving backward and strafing left");
+                } else { // Tentatives 4+ : strafe droit + sauter
+                    setPressed(mc.options.rightKey, true);
+                    setPressed(mc.options.jumpKey, true);
+                    debugMsg("Attempt " + attemptCount + ": Strafing right");
+                    if (attemptCount >= 6) {
+                        attemptCount = 0; // Réinitialiser après 6 tentatives pour éviter une boucle infinie
+                        debugMsg("Resetting attemptCount to 0 after 6 attempts");
+                    }
+                }
+                attemptCount++;
+
                 mc.execute(() -> {
-                    // Relâcher les touches après 10 ticks (200ms) pour éviter un déplacement excessif
+                    // Relâcher les touches après 15 ticks (300ms)
                     new java.util.Timer().schedule(new java.util.TimerTask() {
                         @Override
                         public void run() {
                             setPressed(mc.options.forwardKey, false);
                             setPressed(mc.options.backKey, false);
                             setPressed(mc.options.leftKey, false);
+                            setPressed(mc.options.rightKey, false);
                             setPressed(mc.options.jumpKey, false);
-                            debugMsg("Released movement keys after attempting to float");
+                            debugMsg("Released movement keys after attempting to float (attempt " + attemptCount + ")");
+                            if (!mc.player.isSubmergedInWater()) {
+                                attemptCount = 0; // Réinitialiser si le joueur est à la surface
+                            }
                         }
-                    }, 200); // 200ms ≈ 10 ticks
+                    }, 300); // 300ms ≈ 15 ticks
                 });
                 return; // Attendre le prochain tick pour vérifier si le joueur est à la surface
             }
+
+            // Réinitialiser le compteur une fois à la surface
+            attemptCount = 0;
 
             // Le joueur est à la surface, procéder au lancer
             mc.player.getInventory().setSelectedSlot(0);
@@ -700,6 +771,10 @@ public class StashMover2 extends Module {
                     }
                 });
             }
+        }
+
+        if (debugCooldown > 0) {
+            debugCooldown--;
         }
 
         if (pearlDelay > 0)
@@ -885,17 +960,13 @@ public class StashMover2 extends Module {
 
     @EventHandler
     private void onPlayerMove(PlayerMoveEvent event) {
-        if (state == State.AWAITING_PEARL && beforePearlPos != null)
-        {
-            if (Math.sqrt(mc.player.squaredDistanceTo(Vec3d.of(beforePearlPos))) > teleportChunkDetectDistance.get() * 16)
-            {
-                state = State.GETTING_PEARL;
+        if (state == State.AWAITING_PEARL && beforePearlPos != null) {
+            if (Math.sqrt(mc.player.squaredDistanceTo(Vec3d.of(beforePearlPos))) > teleportChunkDetectDistance.get() * 16) {
+                state = State.HANDLING_ENDERMITE;
                 beforePearlPos = null;
                 usedEchest = false;
                 teleportDelay = 20;
-            }
-            else
-            {
+            } else {
                 beforePearlPos = mc.player.getBlockPos();
             }
         }

@@ -121,76 +121,47 @@ public class StashMoverListener extends Module {
 
     @EventHandler
     private void onReceiveMessage(ReceiveMessageEvent event) {
-        if (mc == null || mc.player == null) return;
+        // DO NOT use any logging methods (debug/info) inside this method to avoid infinite recursion!
 
-        final String raw = event.getMessage().getString();
-        final boolean ic = ignoreCase.get();
+        String message = event.getMessage().getString();
 
-        // 1) Détecter la présence du trigger n'importe où dans le message
-        String base = baseReturnTrigger.get();
-        String stash = stashReturnTrigger.get();
-        String hay = ic ? raw.toLowerCase() : raw;
-        String needleBase = ic ? base.toLowerCase() : base;
-        String needleStash = ic ? stash.toLowerCase() : stash;
+        // Shortcut check for direct triggers to avoid parsing overhead
+        String lowerMsg = message.toLowerCase();
+        String lowerBaseTrigger = baseReturnTrigger.get().toLowerCase();
+        String lowerStashTrigger = stashReturnTrigger.get().toLowerCase();
 
-        boolean hasTrigger = hay.contains(needleBase) || hay.contains(needleStash);
-        if (!hasTrigger) return;
+        // Quick check for whispers containing our triggers
+        if ((lowerMsg.contains("whisper") || lowerMsg.contains("tell") ||
+             lowerMsg.contains("msg") || lowerMsg.contains("message")) &&
+            (lowerMsg.contains(lowerBaseTrigger) || lowerMsg.contains(lowerStashTrigger))) {
 
-        // 2) Déterminer (au mieux) l'expéditeur
-        String sender = extractSender(raw);
-
-        // 3) Vérifier Allowed Senders si renseigné
-        List<String> allowed = allowedSenders.get();
-        if (!allowed.isEmpty()) {
-            boolean ok = false;
-
-            // a) match direct sur l'expéditeur extrait
-            if (sender != null && !sender.isEmpty()) {
-                for (String s : allowed) {
-                    ok |= ic ? s.equalsIgnoreCase(sender) : s.equals(sender);
-                    if (ok) break;
-                }
-            }
-
-            // b) fallback: si pas d'expéditeur fiable, accepter si le message contient un des pseudos
-            if (!ok) {
-                for (String s : allowed) {
-                    ok |= ic ? hay.contains(s.toLowerCase()) : raw.contains(s);
-                    if (ok) break;
-                }
-            }
-
-            if (!ok) return; // bloqué par la whitelist
+            // Instead of logging here, set a flag to log in the tick handler
+            shouldActivateTrapdoor = true;
+            shouldLogActivation = true;
+            activationTicks = activationDelay.get();
+            return;
         }
 
-        // 4) Armer l’activation; le log partira dans onTick
-        shouldActivateTrapdoor = true;
-        shouldLogActivation = true;
-        activationTicks = activationDelay.get();
-    }
+        // More careful parsing if the quick check didn't catch it
+        Matcher matcher = PRIVATE_MESSAGE_PATTERN.matcher(message);
+        if (matcher.matches()) {
+            String sender = matcher.group(1);
+            String content = matcher.group(2);
 
-    // Essaie plusieurs formats fréquents de MP (EN/FR + variantes plugins)
-    private String extractSender(String raw) {
-        // Exemples gérés :
-        // "From Name: msg" | "[From Name] msg" | "Name -> you: msg" | "you -> Name: msg"
-        // "De Name : msg" | "[De Name] msg" | "[MSG] Name: msg" | "[Privé] Name: msg"
-        String[] patterns = new String[] {
-            "^(?:\\[.*?\\]\\s*)?From\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
-            "^(?:\\[.*?\\]\\s*)?To\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
-            "^([A-Za-z0-9_]+)\\s*->\\s*(?:me|you)\\s*:\\s+.+$",
-            "^(?:me|you)\\s*->\\s*([A-Za-z0-9_]+)\\s*:\\s+.+$",
-            "^(?:\\[.*?\\]\\s*)?De\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",   // FR: "De Pseudo : ..."
-            "^(?:\\[.*?\\]\\s*)?\\[?MSG\\]?\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
-            "^(?:\\[.*?\\]\\s*)?\\[?Priv[ée]??\\]?\\s+([A-Za-z0-9_]+)\\s*:\\s+.+$",
-            "^(?:\\[.*?\\]\\s*)?([A-Za-z0-9_]+)\\s+(?:whispers|tells you|messages(?: you)?)\\s*:\\s+.+$"
-        };
-        for (String p : patterns) {
-            Matcher m = Pattern.compile(p, Pattern.CASE_INSENSITIVE).matcher(raw);
-            if (m.matches()) return m.group(1);
+            // If allowedSenders is empty, accept all senders
+            boolean senderAllowed = allowedSenders.get().isEmpty() || allowedSenders.get().contains(sender);
+
+            // Check if sender is allowed
+            if (senderAllowed) {
+                // Check if content matches triggers
+                if (matches(content, baseReturnTrigger.get()) || matches(content, stashReturnTrigger.get())) {
+                    shouldActivateTrapdoor = true;
+                    shouldLogActivation = true;
+                    activationTicks = activationDelay.get();
+                }
+            }
         }
-        return null; // pas sûr
     }
-
 
     /**
      * Check if a message contains a trigger word
