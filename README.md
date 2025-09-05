@@ -19,6 +19,7 @@
     - Optimized to be faster
     - Deposit Chest has been configured for faster operations (stash model to build: https://www.youtube.com/watch?v=R78TuVL54IE)
     - No more deposit chunk to configure
+    - Endermite management on pearl load
     - Better management of pearl statis chamber to prevent water blocked
     - Working on (i think) all server support whispering
     - Need to work with : KillAura (any mode to kill potential endermites), a backup pearl (rare case when pearls are not thrown correctly), Baritone AssumeWalkOnWater = true
