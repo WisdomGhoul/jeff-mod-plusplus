@@ -38,6 +38,7 @@ public class Addon extends MeteorAddon {
         Modules.get().add(new BetterStashFinder());
         Modules.get().add(new ChatSigns());
         Modules.get().add(new ChestIndex());
+        Modules.get().add(new ChestSearcher());
         Modules.get().add(new DiscordNotifs());
         Modules.get().add(new ElytraFlyPlusPlus());
         Modules.get().add(new ElytraReplace());
