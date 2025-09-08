@@ -125,7 +125,7 @@ public class ChestSearcher extends Module {
     private GenericContainerScreen currentScreen = null;
 
     public ChestSearcher() {
-        super(Addon.CATEGORY, "chest-searcher", "Cherche un item dans les coffres proches ou leurs shulkers via Baritone.");
+        super(Addon.CATEGORY, "chest-searcher", "Look for items in chests in an area. Useful for big stashes with non sorted items. Works with shulkers in chests too.");
     }
 
     @Override
