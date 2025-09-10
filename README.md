@@ -14,6 +14,10 @@
 
 ## Features
 - Every modules from jeff mod are included
+- ChestSearcher
+    - Allow you to search for specific items in stashes
+    - Works with chest and shulkers inside of these chests
+    - Helpful on unsorted stashes with a lot of items  
 - StashMover modules
     - Added and updated to 1.21.5 from https://github.com/miles352/meteor-stash-mover
     - Optimized to be faster
