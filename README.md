@@ -13,7 +13,7 @@
 - Xaero Plus
 
 ## Features
-- Every modules from [jeff mod]([https://adoptium.net/](https://github.com/miles352/meteor-stashhunting-addon/tree/1.21.5)) are included
+- Every modules from [jeff mod]([https://github.com/miles352/meteor-stashhunting-addon/tree/1.21.5) are included
 - ChestSearcher
     - Allow you to search for specific items in stashes
     - Works with chest and shulkers inside of these chests
